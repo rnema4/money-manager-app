@@ -3645,6 +3645,7 @@ def clean_description_filter(value: object) -> str:
 
 with app.app_context():
     db.create_all()
+    ensure_ownership_schema_updates()
     seed_defaults()
 
 
