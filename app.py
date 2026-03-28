@@ -20,7 +20,7 @@ from urllib.parse import quote_plus
 import pandas as pd
 from flask import Flask, flash, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from werkzeug.security import check_password_hash, generate_password_hash
 
 def normalize_database_url(raw_url: Optional[str]) -> Optional[str]:
@@ -90,8 +90,10 @@ class Account(db.Model):
     account_type = db.Column(db.String(50), nullable=False, default='Cash')
     opening_balance = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     currency = db.Column(db.String(10), nullable=False, default='INR')
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
+    user = db.relationship('User', backref='accounts')
     transactions = db.relationship('Transaction', backref='account', lazy=True)
 
 
@@ -118,7 +120,10 @@ class Transaction(db.Model):
     reference_no = db.Column(db.String(120))
     account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    user = db.relationship('User')
 
 
 class TransactionMeta(db.Model):
@@ -207,9 +212,11 @@ class MonthlyBudget(db.Model):
     month_key = db.Column(db.String(7), nullable=False)  # YYYY-MM
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
     amount_limit = db.Column(db.Numeric(12, 2), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     category = db.relationship('Category')
+    user = db.relationship('User')
 
 
 class SavingsGoal(db.Model):
@@ -219,7 +226,10 @@ class SavingsGoal(db.Model):
     current_saved = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     target_date = db.Column(db.Date)
     is_completed = db.Column(db.Boolean, nullable=False, default=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    user = db.relationship('User')
 
 
 class SecurityToken(db.Model):
@@ -371,11 +381,117 @@ def seed_defaults() -> None:
         if is_placeholder_color(category.color):
             category.color = mapped_color
 
-    if not Account.query.first():
-        db.session.add(Account(name='Cash Wallet', account_type='Cash', opening_balance=0, currency='INR'))
-        db.session.add(Account(name='Primary Bank', account_type='Bank', opening_balance=0, currency='INR'))
-
     db.session.commit()
+
+
+def ensure_ownership_schema_updates() -> None:
+    inspector = inspect(db.engine)
+    account_columns = {col['name'] for col in inspector.get_columns('account')}
+    transaction_columns = {col['name'] for col in inspector.get_columns('transaction')}
+    budget_columns = {col['name'] for col in inspector.get_columns('monthly_budget')}
+    goal_columns = {col['name'] for col in inspector.get_columns('savings_goal')}
+    statements: list[str] = []
+    if 'user_id' not in account_columns:
+        statements.append('ALTER TABLE account ADD COLUMN user_id INTEGER')
+    if 'user_id' not in transaction_columns:
+        statements.append('ALTER TABLE `transaction` ADD COLUMN user_id INTEGER')
+    if 'user_id' not in budget_columns:
+        statements.append('ALTER TABLE monthly_budget ADD COLUMN user_id INTEGER')
+    if 'user_id' not in goal_columns:
+        statements.append('ALTER TABLE savings_goal ADD COLUMN user_id INTEGER')
+    if not statements:
+        return
+    with db.engine.begin() as connection:
+        for sql in statements:
+            connection.execute(text(sql))
+
+
+def current_user_id() -> Optional[int]:
+    value = session.get('user_id')
+    return int(value) if isinstance(value, int) else None
+
+
+def accounts_for_user_query(user_id: Optional[int] = None):
+    target_user_id = user_id if user_id is not None else current_user_id()
+    return Account.query.filter(Account.user_id == target_user_id)
+
+
+def transactions_for_user_query(user_id: Optional[int] = None):
+    target_user_id = user_id if user_id is not None else current_user_id()
+    return Transaction.query.filter(Transaction.user_id == target_user_id)
+
+
+def next_available_account_name(base_name: str, user_id: int) -> str:
+    candidate = base_name
+    serial = 1
+    while Account.query.filter(func.lower(Account.name) == candidate.lower()).first():
+        suffix = f'({user_id})' if serial == 1 else f'({user_id}-{serial})'
+        candidate = f'{base_name} {suffix}'
+        serial += 1
+    return candidate
+
+
+def ensure_user_workspace(user_id: int) -> None:
+    if not user_id:
+        return
+    changed = False
+    if accounts_for_user_query(user_id).count() == 0:
+        orphan_accounts = Account.query.filter(Account.user_id.is_(None)).order_by(Account.id.asc()).all()
+        if orphan_accounts:
+            for account in orphan_accounts:
+                account.user_id = user_id
+            changed = True
+        else:
+            db.session.add(
+                Account(
+                    name=next_available_account_name('Cash Wallet', user_id),
+                    account_type='Cash',
+                    opening_balance=0,
+                    currency='INR',
+                    user_id=user_id,
+                )
+            )
+            db.session.add(
+                Account(
+                    name=next_available_account_name('Primary Bank', user_id),
+                    account_type='Bank',
+                    opening_balance=0,
+                    currency='INR',
+                    user_id=user_id,
+                )
+            )
+            changed = True
+
+    account_ids = [row[0] for row in accounts_for_user_query(user_id).with_entities(Account.id).all()]
+    if account_ids:
+        updated = (
+            Transaction.query
+            .filter(Transaction.account_id.in_(account_ids), Transaction.user_id.is_(None))
+            .update({'user_id': user_id}, synchronize_session=False)
+        )
+        if updated:
+            changed = True
+
+    if SavingsGoal.query.filter_by(user_id=user_id).count() == 0:
+        claimed_goals = (
+            SavingsGoal.query
+            .filter(SavingsGoal.user_id.is_(None))
+            .update({'user_id': user_id}, synchronize_session=False)
+        )
+        if claimed_goals:
+            changed = True
+
+    if MonthlyBudget.query.filter_by(user_id=user_id).count() == 0:
+        claimed_budgets = (
+            MonthlyBudget.query
+            .filter(MonthlyBudget.user_id.is_(None))
+            .update({'user_id': user_id}, synchronize_session=False)
+        )
+        if claimed_budgets:
+            changed = True
+
+    if changed:
+        db.session.commit()
 
 
 def login_required(view_func):
@@ -552,14 +668,17 @@ def get_next_occurrence(next_date: date, frequency: str, interval_value: int) ->
     return add_months(next_date, interval_value)
 
 
-def process_recurring_transactions(run_date: Optional[date] = None) -> int:
+def process_recurring_transactions(run_date: Optional[date] = None, user_id: Optional[int] = None) -> int:
     target_date = run_date or datetime.utcnow().date()
-    recurring_items = (
+    recurring_query = (
         RecurringTransaction.query
-        .filter_by(is_active=True)
+        .join(Account, RecurringTransaction.account_id == Account.id)
+        .filter(RecurringTransaction.is_active.is_(True))
         .filter(RecurringTransaction.next_run_date <= target_date)
-        .all()
     )
+    if user_id is not None:
+        recurring_query = recurring_query.filter(Account.user_id == user_id)
+    recurring_items = recurring_query.all()
 
     created_count = 0
     changed = False
@@ -567,7 +686,11 @@ def process_recurring_transactions(run_date: Optional[date] = None) -> int:
         safety = 0
         while item.next_run_date and item.next_run_date <= target_date and safety < 60:
             reference_key = f'rec-{item.id}-{item.next_run_date.isoformat()}'
-            exists = Transaction.query.filter_by(source='recurring', reference_no=reference_key).first()
+            exists = Transaction.query.filter_by(
+                source='recurring',
+                reference_no=reference_key,
+                user_id=user_id,
+            ).first()
             if not exists:
                 tx_date = datetime.combine(item.next_run_date, datetime.min.time())
                 transaction = Transaction(
@@ -581,6 +704,7 @@ def process_recurring_transactions(run_date: Optional[date] = None) -> int:
                     reference_no=reference_key,
                     account_id=item.account_id,
                     category_id=item.category_id,
+                    user_id=user_id,
                 )
                 db.session.add(transaction)
                 created_count += 1
@@ -791,12 +915,16 @@ def run_recurring_engine():
 
     if not session.get('user_id'):
         return
+    user_id = current_user_id()
+    if not user_id:
+        return
+    ensure_user_workspace(user_id)
 
     today_key = datetime.utcnow().date().isoformat()
     if session.get('last_recurring_run') == today_key:
         return
 
-    created = process_recurring_transactions()
+    created = process_recurring_transactions(user_id=user_id)
     session['last_recurring_run'] = today_key
     if created > 0:
         flash(f'Auto-posted {created} recurring transaction(s).', 'info')
@@ -837,6 +965,7 @@ def signup():
 
             session['user_id'] = user.id
             session['user_name'] = user.name
+            ensure_user_workspace(user.id)
             ensure_user_security(user.id)
             verify_token = create_security_token(user.id, 'email_verify', ttl_minutes=60 * 24)
             verification_link = url_for('verify_email', token=verify_token, _external=False)
@@ -877,6 +1006,7 @@ def login():
 
         session['user_id'] = user.id
         session['user_name'] = user.name
+        ensure_user_workspace(user.id)
         session.pop('pending_2fa_user_id', None)
         session.pop('pending_2fa_user_name', None)
         session.pop('pending_2fa_next', None)
@@ -906,6 +1036,7 @@ def login_two_factor():
     if not security.two_factor_enabled or not security.two_factor_secret_enc:
         session['user_id'] = user.id
         session['user_name'] = user.name
+        ensure_user_workspace(user.id)
         session.pop('pending_2fa_user_id', None)
         session.pop('pending_2fa_user_name', None)
         session.pop('pending_2fa_next', None)
@@ -1101,12 +1232,12 @@ def disable_two_factor():
     return redirect(url_for('security_center'))
 
 
-def build_backup_payload() -> dict:
+def build_backup_payload(user_id: int) -> dict:
     return {
         'exported_at': datetime.utcnow().isoformat(),
         'accounts': [
             {'name': a.name, 'account_type': a.account_type, 'opening_balance': float(a.opening_balance), 'currency': a.currency}
-            for a in Account.query.order_by(Account.id).all()
+            for a in accounts_for_user_query(user_id).order_by(Account.id).all()
         ],
         'categories': [
             {'name': c.name, 'kind': c.kind, 'icon': c.icon, 'color': c.color, 'is_active': c.is_active}
@@ -1125,7 +1256,7 @@ def build_backup_payload() -> dict:
                 'account_name': t.account.name,
                 'category_name': t.category.name,
             }
-            for t in Transaction.query.order_by(Transaction.id).all()
+            for t in transactions_for_user_query(user_id).order_by(Transaction.id).all()
         ],
         'investment_assets': [
             {
@@ -1167,7 +1298,13 @@ def build_backup_payload() -> dict:
                 'account_name': Account.query.get(r.account_id).name if Account.query.get(r.account_id) else None,
                 'category_name': Category.query.get(r.category_id).name if Category.query.get(r.category_id) else None,
             }
-            for r in RecurringTransaction.query.order_by(RecurringTransaction.id).all()
+            for r in (
+                RecurringTransaction.query
+                .join(Account, RecurringTransaction.account_id == Account.id)
+                .filter(Account.user_id == user_id)
+                .order_by(RecurringTransaction.id)
+                .all()
+            )
         ],
         'bills': [
             {
@@ -1182,11 +1319,17 @@ def build_backup_payload() -> dict:
                 'is_active': b.is_active,
                 'account_name': Account.query.get(b.account_id).name if b.account_id and Account.query.get(b.account_id) else None,
             }
-            for b in Bill.query.order_by(Bill.id).all()
+            for b in (
+                Bill.query
+                .join(Account, Bill.account_id == Account.id)
+                .filter(Account.user_id == user_id)
+                .order_by(Bill.id)
+                .all()
+            )
         ],
         'budgets': [
             {'month_key': b.month_key, 'category_name': b.category.name, 'amount_limit': float(b.amount_limit)}
-            for b in MonthlyBudget.query.order_by(MonthlyBudget.id).all()
+            for b in MonthlyBudget.query.filter_by(user_id=user_id).order_by(MonthlyBudget.id).all()
         ],
         'savings_goals': [
             {
@@ -1196,7 +1339,7 @@ def build_backup_payload() -> dict:
                 'target_date': g.target_date.isoformat() if g.target_date else None,
                 'is_completed': g.is_completed,
             }
-            for g in SavingsGoal.query.order_by(SavingsGoal.id).all()
+            for g in SavingsGoal.query.filter_by(user_id=user_id).order_by(SavingsGoal.id).all()
         ],
     }
 
@@ -1204,7 +1347,8 @@ def build_backup_payload() -> dict:
 @app.route('/security/backup/download')
 @login_required
 def download_backup():
-    payload = build_backup_payload()
+    user_id = current_user_id()
+    payload = build_backup_payload(user_id) if user_id else {'exported_at': datetime.utcnow().isoformat()}
     output = BytesIO(json.dumps(payload, indent=2).encode('utf-8'))
     output.seek(0)
     filename = f"money_manager_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
@@ -1215,6 +1359,7 @@ def download_backup():
 @app.route('/security/backup/restore', methods=['POST'])
 @login_required
 def restore_backup():
+    user_id = current_user_id()
     file = request.files.get('backup_file')
     if not file or not file.filename:
         flash('Please choose a backup JSON file.', 'warning')
@@ -1226,15 +1371,16 @@ def restore_backup():
         return redirect(url_for('security_center'))
 
     try:
-        account_map = {a.name: a for a in Account.query.all()}
+        account_map = {a.name: a for a in accounts_for_user_query(user_id).all()}
         for item in payload.get('accounts', []):
             if item.get('name') in account_map:
                 continue
             account = Account(
-                name=item.get('name', '').strip(),
+                name=next_available_account_name(item.get('name', '').strip(), user_id),
                 account_type=item.get('account_type') or 'Cash',
                 opening_balance=Decimal(str(item.get('opening_balance', 0))),
                 currency=item.get('currency') or 'INR',
+                user_id=user_id,
             )
             db.session.add(account)
             db.session.flush()
@@ -1281,6 +1427,7 @@ def restore_backup():
                 amount=Decimal(str(item.get('amount', 0))),
                 account_id=account.id,
                 category_id=category.id,
+                user_id=user_id,
             ).first()
             if exists:
                 continue
@@ -1296,6 +1443,7 @@ def restore_backup():
                 source=item.get('source') or 'restore',
                 account_id=account.id,
                 category_id=category.id,
+                user_id=user_id,
             )
             db.session.add(tx)
             restored_tx += 1
@@ -1537,13 +1685,14 @@ def dashboard():
             'today': today_local,
         }
 
-    accounts = Account.query.order_by(Account.name).all()
+    user_id = current_user_id()
+    accounts = accounts_for_user_query(user_id).order_by(Account.name).all()
     period_cfg = resolve_period_config()
     today = period_cfg['today']
     start_date = period_cfg['start_date']
     end_date = period_cfg['end_date']
 
-    period_query = Transaction.query
+    period_query = transactions_for_user_query(user_id)
     if start_date and end_date:
         range_start_dt = datetime.combine(start_date, datetime.min.time())
         range_end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -1572,9 +1721,9 @@ def dashboard():
     if expense_total > 0:
         income_expense_ratio = float((income_total / expense_total))
 
-    opening_total = db.session.query(func.coalesce(func.sum(Account.opening_balance), 0)).scalar() or 0
-    all_income_total = db.session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(Transaction.tx_type == 'income').scalar() or 0
-    all_expense_total = db.session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(Transaction.tx_type == 'expense').scalar() or 0
+    opening_total = accounts_for_user_query(user_id).with_entities(func.coalesce(func.sum(Account.opening_balance), 0)).scalar() or 0
+    all_income_total = transactions_for_user_query(user_id).with_entities(func.coalesce(func.sum(Transaction.amount), 0)).filter(Transaction.tx_type == 'income').scalar() or 0
+    all_expense_total = transactions_for_user_query(user_id).with_entities(func.coalesce(func.sum(Transaction.amount), 0)).filter(Transaction.tx_type == 'expense').scalar() or 0
     balance = Decimal(opening_total) + Decimal(all_income_total) - Decimal(all_expense_total)
     burn_rate_daily = (expense_total / Decimal(period_days)) if period_days > 0 else Decimal('0')
     runway_days = Decimal('0')
@@ -1656,7 +1805,9 @@ def dashboard():
 
     upcoming_recurring = (
         RecurringTransaction.query
-        .filter_by(is_active=True)
+        .join(Account, RecurringTransaction.account_id == Account.id)
+        .filter(RecurringTransaction.is_active.is_(True))
+        .filter(Account.user_id == user_id)
         .filter(RecurringTransaction.next_run_date >= today, RecurringTransaction.next_run_date <= today + timedelta(days=7))
         .order_by(RecurringTransaction.next_run_date.asc())
         .limit(6)
@@ -1664,7 +1815,9 @@ def dashboard():
     )
     upcoming_bills = (
         Bill.query
-        .filter_by(is_active=True)
+        .join(Account, Bill.account_id == Account.id)
+        .filter(Bill.is_active.is_(True))
+        .filter(Account.user_id == user_id)
         .filter(Bill.next_due_date >= today, Bill.next_due_date <= today + timedelta(days=10))
         .order_by(Bill.next_due_date.asc())
         .limit(6)
@@ -1672,7 +1825,9 @@ def dashboard():
     )
     overdue_bills = (
         Bill.query
-        .filter_by(is_active=True)
+        .join(Account, Bill.account_id == Account.id)
+        .filter(Bill.is_active.is_(True))
+        .filter(Account.user_id == user_id)
         .filter(Bill.next_due_date < today)
         .order_by(Bill.next_due_date.asc())
         .all()
@@ -1708,11 +1863,13 @@ def dashboard():
 
     account_cards = []
     for account in accounts:
-        income = db.session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-            Transaction.account_id == account.id, Transaction.tx_type == 'income'
+        income = transactions_for_user_query(user_id).with_entities(func.coalesce(func.sum(Transaction.amount), 0)).filter(
+            Transaction.account_id == account.id,
+            Transaction.tx_type == 'income',
         ).scalar() or 0
-        expense = db.session.query(func.coalesce(func.sum(Transaction.amount), 0)).filter(
-            Transaction.account_id == account.id, Transaction.tx_type == 'expense'
+        expense = transactions_for_user_query(user_id).with_entities(func.coalesce(func.sum(Transaction.amount), 0)).filter(
+            Transaction.account_id == account.id,
+            Transaction.tx_type == 'expense',
         ).scalar() or 0
         current_balance = Decimal(account.opening_balance) + Decimal(income) - Decimal(expense)
         account_cards.append({'account': account, 'balance': current_balance})
@@ -1787,8 +1944,12 @@ def dashboard():
 @app.route('/records')
 @login_required
 def records():
+    user_id = current_user_id()
     filters = get_records_filters_from_request()
-    query = apply_records_filters(Transaction.query.join(Account).join(Category), filters)
+    query = apply_records_filters(
+        transactions_for_user_query(user_id).join(Account, Transaction.account_id == Account.id).join(Category),
+        filters,
+    )
     sort, sort_order = resolve_records_sort(filters['sort'])
     filters['sort'] = sort
 
@@ -1801,7 +1962,7 @@ def records():
     total = sum([Decimal(t.amount) if t.tx_type == 'income' else -Decimal(t.amount) for t in transactions], Decimal('0'))
     currencies = [
         row[0] for row in db.session.query(Account.currency)
-        .filter(Account.currency.isnot(None), Account.currency != '')
+        .filter(Account.user_id == user_id, Account.currency.isnot(None), Account.currency != '')
         .distinct()
         .order_by(Account.currency)
         .all()
@@ -1811,7 +1972,7 @@ def records():
     return render_template(
         'records.html',
         transactions=transactions,
-        accounts=Account.query.order_by(Account.name).all(),
+        accounts=accounts_for_user_query(user_id).order_by(Account.name).all(),
         categories=Category.query.order_by(Category.name).all(),
         currencies=currencies,
         filters=filters,
@@ -1824,8 +1985,12 @@ def records():
 @app.route('/records/export')
 @login_required
 def export_records():
+    user_id = current_user_id()
     filters = get_records_filters_from_request()
-    query = apply_records_filters(Transaction.query.join(Account).join(Category), filters)
+    query = apply_records_filters(
+        transactions_for_user_query(user_id).join(Account, Transaction.account_id == Account.id).join(Category),
+        filters,
+    )
     _, sort_order = resolve_records_sort(filters['sort'])
     transactions = query.order_by(sort_order, Transaction.id.desc()).all()
 
@@ -1854,14 +2019,15 @@ def export_records():
 @app.route('/records/bulk/export', methods=['POST'])
 @login_required
 def bulk_export_records():
+    user_id = current_user_id()
     selected_ids = parse_selected_transaction_ids_from_request()
     if not selected_ids:
         flash('Please select at least one record to export.', 'warning')
         return redirect(url_for('records'))
 
     transactions = (
-        Transaction.query
-        .join(Account)
+        transactions_for_user_query(user_id)
+        .join(Account, Transaction.account_id == Account.id)
         .join(Category)
         .filter(Transaction.id.in_(selected_ids))
         .order_by(Transaction.tx_date.desc(), Transaction.id.desc())
@@ -1895,14 +2061,25 @@ def bulk_export_records():
 @app.route('/records/bulk/delete', methods=['POST'])
 @login_required
 def bulk_delete_records():
+    user_id = current_user_id()
     selected_ids = parse_selected_transaction_ids_from_request()
     if not selected_ids:
         flash('Please select at least one record to delete.', 'warning')
         return redirect(url_for('records'))
 
     try:
-        TransactionMeta.query.filter(TransactionMeta.transaction_id.in_(selected_ids)).delete(synchronize_session=False)
-        deleted_count = Transaction.query.filter(Transaction.id.in_(selected_ids)).delete(synchronize_session=False)
+        allowed_ids = [
+            row[0]
+            for row in transactions_for_user_query(user_id)
+            .with_entities(Transaction.id)
+            .filter(Transaction.id.in_(selected_ids))
+            .all()
+        ]
+        if not allowed_ids:
+            flash('No valid records found for selected delete.', 'warning')
+            return redirect(url_for('records'))
+        TransactionMeta.query.filter(TransactionMeta.transaction_id.in_(allowed_ids)).delete(synchronize_session=False)
+        deleted_count = Transaction.query.filter(Transaction.id.in_(allowed_ids)).delete(synchronize_session=False)
         db.session.commit()
         log_audit('records.bulk_delete', f'count={deleted_count}')
         flash(f'Deleted {deleted_count} selected record(s).', 'success')
@@ -1915,6 +2092,7 @@ def bulk_delete_records():
 @app.route('/records/bulk/edit', methods=['POST'])
 @login_required
 def bulk_edit_records():
+    user_id = current_user_id()
     selected_ids = parse_selected_transaction_ids_from_request()
     if not selected_ids:
         flash('Please select at least one record to edit.', 'warning')
@@ -1936,7 +2114,7 @@ def bulk_edit_records():
             flash('Selected category is invalid.', 'warning')
             return redirect(url_for('records'))
 
-    transactions = Transaction.query.filter(Transaction.id.in_(selected_ids)).all()
+    transactions = transactions_for_user_query(user_id).filter(Transaction.id.in_(selected_ids)).all()
     if not transactions:
         flash('No valid records found for selected edit.', 'warning')
         return redirect(url_for('records'))
@@ -1975,13 +2153,18 @@ def bulk_edit_records():
 @app.route('/recurring', methods=['GET', 'POST'])
 @login_required
 def recurring():
-    accounts = Account.query.order_by(Account.name).all()
+    user_id = current_user_id()
+    accounts = accounts_for_user_query(user_id).order_by(Account.name).all()
     categories = Category.query.filter_by(is_active=True).order_by(Category.kind, Category.name).all()
 
     if request.method == 'POST':
         try:
             next_run_date = datetime.strptime(request.form['next_run_date'], '%Y-%m-%d').date()
             interval_value = max(1, int(request.form.get('interval_value', '1') or '1'))
+            account = accounts_for_user_query(user_id).filter(Account.id == int(request.form['account_id'])).first()
+            if not account:
+                flash('Please choose a valid account for your profile.', 'warning')
+                return redirect(url_for('recurring'))
             item = RecurringTransaction(
                 name=request.form['name'].strip(),
                 description=request.form.get('description', '').strip() or request.form['name'].strip(),
@@ -1992,7 +2175,7 @@ def recurring():
                 frequency=request.form['frequency'],
                 interval_value=interval_value,
                 next_run_date=next_run_date,
-                account_id=int(request.form['account_id']),
+                account_id=account.id,
                 category_id=int(request.form['category_id']),
                 is_active=True,
             )
@@ -2006,7 +2189,13 @@ def recurring():
             db.session.rollback()
             flash(f'Could not create recurring rule: {exc}', 'danger')
 
-    rules = RecurringTransaction.query.order_by(RecurringTransaction.next_run_date.asc(), RecurringTransaction.name.asc()).all()
+    rules = (
+        RecurringTransaction.query
+        .join(Account, RecurringTransaction.account_id == Account.id)
+        .filter(Account.user_id == user_id)
+        .order_by(RecurringTransaction.next_run_date.asc(), RecurringTransaction.name.asc())
+        .all()
+    )
     return render_template(
         'recurring.html',
         rules=rules,
@@ -2018,7 +2207,13 @@ def recurring():
 @app.route('/recurring/<int:rule_id>/toggle', methods=['POST'])
 @login_required
 def toggle_recurring(rule_id: int):
-    rule = RecurringTransaction.query.get_or_404(rule_id)
+    user_id = current_user_id()
+    rule = (
+        RecurringTransaction.query
+        .join(Account, RecurringTransaction.account_id == Account.id)
+        .filter(Account.user_id == user_id, RecurringTransaction.id == rule_id)
+        .first_or_404()
+    )
     rule.is_active = not rule.is_active
     db.session.commit()
     log_audit('recurring.rule_toggled', f'rule_id={rule.id},active={rule.is_active}')
@@ -2029,7 +2224,13 @@ def toggle_recurring(rule_id: int):
 @app.route('/recurring/<int:rule_id>/delete', methods=['POST'])
 @login_required
 def delete_recurring(rule_id: int):
-    rule = RecurringTransaction.query.get_or_404(rule_id)
+    user_id = current_user_id()
+    rule = (
+        RecurringTransaction.query
+        .join(Account, RecurringTransaction.account_id == Account.id)
+        .filter(Account.user_id == user_id, RecurringTransaction.id == rule_id)
+        .first_or_404()
+    )
     db.session.delete(rule)
     db.session.commit()
     log_audit('recurring.rule_deleted', f'rule_id={rule_id}')
@@ -2040,11 +2241,17 @@ def delete_recurring(rule_id: int):
 @app.route('/bills', methods=['GET', 'POST'])
 @login_required
 def bills():
-    accounts = Account.query.order_by(Account.name).all()
+    user_id = current_user_id()
+    accounts = accounts_for_user_query(user_id).order_by(Account.name).all()
 
     if request.method == 'POST':
         try:
             next_due_date = datetime.strptime(request.form['next_due_date'], '%Y-%m-%d').date()
+            account_id = request.form.get('account_id', type=int)
+            account = accounts_for_user_query(user_id).filter(Account.id == account_id).first() if account_id else None
+            if not account:
+                flash('Please choose a valid account for your profile.', 'warning')
+                return redirect(url_for('bills'))
             bill = Bill(
                 name=request.form['name'].strip(),
                 bill_kind=request.form['bill_kind'],
@@ -2053,7 +2260,7 @@ def bills():
                 annual_interest_rate=Decimal(request.form.get('annual_interest_rate', '0') or '0'),
                 outstanding_balance=Decimal(request.form.get('outstanding_balance', '0') or '0'),
                 next_due_date=next_due_date,
-                account_id=request.form.get('account_id', type=int) or None,
+                account_id=account.id,
                 notes=request.form.get('notes', '').strip() or None,
                 is_active=True,
             )
@@ -2066,7 +2273,13 @@ def bills():
             db.session.rollback()
             flash(f'Could not add bill: {exc}', 'danger')
 
-    all_bills = Bill.query.order_by(Bill.next_due_date.asc(), Bill.name.asc()).all()
+    all_bills = (
+        Bill.query
+        .join(Account, Bill.account_id == Account.id)
+        .filter(Account.user_id == user_id)
+        .order_by(Bill.next_due_date.asc(), Bill.name.asc())
+        .all()
+    )
     planner = build_payment_planner(all_bills, datetime.utcnow().date())
     return render_template('bills.html', bills=all_bills, planner=planner, accounts=accounts, today=datetime.utcnow().date())
 
@@ -2074,7 +2287,13 @@ def bills():
 @app.route('/bills/<int:bill_id>/pay', methods=['POST'])
 @login_required
 def pay_bill(bill_id: int):
-    bill = Bill.query.get_or_404(bill_id)
+    user_id = current_user_id()
+    bill = (
+        Bill.query
+        .join(Account, Bill.account_id == Account.id)
+        .filter(Account.user_id == user_id, Bill.id == bill_id)
+        .first_or_404()
+    )
     amount_paid = parse_decimal_or_none(request.form.get('amount_paid', ''))
     if amount_paid is None or amount_paid <= 0:
         flash('Enter a valid payment amount.', 'warning')
@@ -2109,6 +2328,7 @@ def pay_bill(bill_id: int):
                 reference_no=f'bill-{bill.id}-{datetime.utcnow().date().isoformat()}',
                 account_id=bill.account_id,
                 category_id=category.id,
+                user_id=user_id,
             )
             db.session.add(transaction)
 
@@ -2124,7 +2344,13 @@ def pay_bill(bill_id: int):
 @app.route('/bills/<int:bill_id>/toggle', methods=['POST'])
 @login_required
 def toggle_bill(bill_id: int):
-    bill = Bill.query.get_or_404(bill_id)
+    user_id = current_user_id()
+    bill = (
+        Bill.query
+        .join(Account, Bill.account_id == Account.id)
+        .filter(Account.user_id == user_id, Bill.id == bill_id)
+        .first_or_404()
+    )
     bill.is_active = not bill.is_active
     db.session.commit()
     log_audit('bills.item_toggled', f'bill_id={bill.id},active={bill.is_active}')
@@ -2417,12 +2643,13 @@ def first_day_previous_month(any_date: date) -> date:
 @app.route('/analytics')
 @login_required
 def analytics():
+    user_id = current_user_id()
     today = datetime.utcnow().date()
     current_month_start = first_day_of_month(today)
     previous_month_start = first_day_previous_month(today)
     next_month_start = add_months(current_month_start, 1)
 
-    monthly_transactions = Transaction.query.order_by(Transaction.tx_date.asc()).all()
+    monthly_transactions = transactions_for_user_query(user_id).order_by(Transaction.tx_date.asc()).all()
     month_map: dict[str, dict[str, Decimal]] = {}
     for tx in monthly_transactions:
         month_key = tx.tx_date.strftime('%Y-%m')
@@ -2456,7 +2683,7 @@ def analytics():
         avg_monthly_net = max(avg_monthly_net, floor_limit)
     net_volatility = statistics.pstdev(recent_net) if len(recent_net) >= 2 else abs(avg_monthly_net) * 0.18
     starting_balance = float(
-        db.session.query(func.coalesce(func.sum(Account.opening_balance), 0)).scalar() or 0
+        accounts_for_user_query(user_id).with_entities(func.coalesce(func.sum(Account.opening_balance), 0)).scalar() or 0
     ) + sum(net_series)
     starting_balance = max(0.0, starting_balance)
     forecast_labels = []
@@ -2481,7 +2708,9 @@ def analytics():
             func.sum(Transaction.amount).label('spent'),
         )
         .join(Transaction, Transaction.category_id == Category.id)
+        .join(Account, Transaction.account_id == Account.id)
         .filter(
+            Account.user_id == user_id,
             Transaction.tx_type == 'expense',
             Transaction.tx_date >= current_month_start,
             Transaction.tx_date < next_month_start,
@@ -2495,7 +2724,9 @@ def analytics():
             func.sum(Transaction.amount).label('spent'),
         )
         .join(Transaction, Transaction.category_id == Category.id)
+        .join(Account, Transaction.account_id == Account.id)
         .filter(
+            Account.user_id == user_id,
             Transaction.tx_type == 'expense',
             Transaction.tx_date >= previous_month_start,
             Transaction.tx_date < current_month_start,
@@ -2540,7 +2771,7 @@ def analytics():
     weekday_labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     weekday_spend_values = [0.0 for _ in weekday_labels]
     recent_expense_transactions = (
-        Transaction.query
+        transactions_for_user_query(user_id)
         .filter(
             Transaction.tx_type == 'expense',
             Transaction.tx_date >= today - timedelta(days=180),
@@ -2557,7 +2788,9 @@ def analytics():
             func.date(Transaction.tx_date).label('tx_day'),
             func.sum(Transaction.amount).label('total'),
         )
+        .join(Account, Transaction.account_id == Account.id)
         .filter(
+            Account.user_id == user_id,
             Transaction.tx_type == 'expense',
             Transaction.tx_date >= today - timedelta(days=90),
         )
@@ -2588,7 +2821,7 @@ def analytics():
     budgets = (
         MonthlyBudget.query
         .join(Category, MonthlyBudget.category_id == Category.id)
-        .filter(MonthlyBudget.month_key == month_key)
+        .filter(MonthlyBudget.month_key == month_key, MonthlyBudget.user_id == user_id)
         .order_by(Category.name.asc())
         .all()
     )
@@ -2610,7 +2843,7 @@ def analytics():
         if progress_item['overspend']:
             overspend_alerts.append(progress_item)
 
-    savings_goals = SavingsGoal.query.order_by(SavingsGoal.created_at.desc()).all()
+    savings_goals = SavingsGoal.query.filter_by(user_id=user_id).order_by(SavingsGoal.created_at.desc()).all()
     goal_cards = []
     for goal in savings_goals:
         target = Decimal(goal.target_amount or 0)
@@ -2648,6 +2881,7 @@ def analytics():
 @app.route('/analytics/budgets', methods=['POST'])
 @login_required
 def create_budget():
+    user_id = current_user_id()
     try:
         month_key = request.form.get('month_key', '').strip()
         category_id = request.form.get('category_id', type=int)
@@ -2656,11 +2890,11 @@ def create_budget():
             flash('Enter valid budget details.', 'warning')
             return redirect(url_for('analytics'))
 
-        budget = MonthlyBudget.query.filter_by(month_key=month_key, category_id=category_id).first()
+        budget = MonthlyBudget.query.filter_by(month_key=month_key, category_id=category_id, user_id=user_id).first()
         if budget:
             budget.amount_limit = amount_limit
         else:
-            budget = MonthlyBudget(month_key=month_key, category_id=category_id, amount_limit=amount_limit)
+            budget = MonthlyBudget(month_key=month_key, category_id=category_id, amount_limit=amount_limit, user_id=user_id)
             db.session.add(budget)
         db.session.commit()
         flash('Category budget saved.', 'success')
@@ -2674,7 +2908,8 @@ def create_budget():
 @app.route('/analytics/budgets/<int:budget_id>/delete', methods=['POST'])
 @login_required
 def delete_budget(budget_id: int):
-    budget = MonthlyBudget.query.get_or_404(budget_id)
+    user_id = current_user_id()
+    budget = MonthlyBudget.query.filter_by(id=budget_id, user_id=user_id).first_or_404()
     db.session.delete(budget)
     db.session.commit()
     flash('Budget deleted.', 'success')
@@ -2685,6 +2920,7 @@ def delete_budget(budget_id: int):
 @app.route('/analytics/goals', methods=['POST'])
 @login_required
 def create_goal():
+    user_id = current_user_id()
     try:
         name = request.form.get('name', '').strip()
         target_amount = parse_decimal_or_none(request.form.get('target_amount', ''))
@@ -2701,6 +2937,7 @@ def create_goal():
             current_saved=max(Decimal('0'), initial_saved),
             target_date=target_date,
             is_completed=initial_saved >= target_amount,
+            user_id=user_id,
         )
         db.session.add(goal)
         db.session.commit()
@@ -2715,7 +2952,8 @@ def create_goal():
 @app.route('/analytics/goals/<int:goal_id>/contribute', methods=['POST'])
 @login_required
 def contribute_goal(goal_id: int):
-    goal = SavingsGoal.query.get_or_404(goal_id)
+    user_id = current_user_id()
+    goal = SavingsGoal.query.filter_by(id=goal_id, user_id=user_id).first_or_404()
     amount = parse_decimal_or_none(request.form.get('amount', ''))
     if amount is None or amount <= 0:
         flash('Enter a valid contribution amount.', 'warning')
@@ -2731,7 +2969,8 @@ def contribute_goal(goal_id: int):
 @app.route('/analytics/goals/<int:goal_id>/toggle', methods=['POST'])
 @login_required
 def toggle_goal(goal_id: int):
-    goal = SavingsGoal.query.get_or_404(goal_id)
+    user_id = current_user_id()
+    goal = SavingsGoal.query.filter_by(id=goal_id, user_id=user_id).first_or_404()
     goal.is_completed = not goal.is_completed
     db.session.commit()
     flash('Goal status updated.', 'success')
@@ -2901,13 +3140,18 @@ def resolve_records_sort(sort: str):
 @app.route('/transactions/add', methods=['GET', 'POST'])
 @login_required
 def add_transaction():
-    accounts = Account.query.order_by(Account.name).all()
+    user_id = current_user_id()
+    accounts = accounts_for_user_query(user_id).order_by(Account.name).all()
     categories = Category.query.filter_by(is_active=True).order_by(Category.kind, Category.name).all()
     default_tx_date = request.form.get('tx_date', datetime.utcnow().strftime('%Y-%m-%dT%H:%M'))
 
     if request.method == 'POST':
         try:
             tx_date = datetime.strptime(request.form['tx_date'], '%Y-%m-%dT%H:%M')
+            account = accounts_for_user_query(user_id).filter(Account.id == int(request.form['account_id'])).first()
+            if not account:
+                flash('Please choose a valid account for your profile.', 'warning')
+                return redirect(url_for('add_transaction'))
             transaction = Transaction(
                 tx_date=tx_date,
                 description=request.form['description'].strip(),
@@ -2916,8 +3160,9 @@ def add_transaction():
                 notes=request.form.get('notes', '').strip() or None,
                 payee=request.form.get('payee', '').strip() or None,
                 reference_no=request.form.get('reference_no', '').strip() or None,
-                account_id=int(request.form['account_id']),
+                account_id=account.id,
                 category_id=int(request.form['category_id']),
+                user_id=user_id,
                 source='manual',
             )
             db.session.add(transaction)
@@ -2939,8 +3184,9 @@ def add_transaction():
 @app.route('/transactions/<int:transaction_id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_transaction(transaction_id: int):
-    transaction = Transaction.query.get_or_404(transaction_id)
-    accounts = Account.query.order_by(Account.name).all()
+    user_id = current_user_id()
+    transaction = transactions_for_user_query(user_id).filter(Transaction.id == transaction_id).first_or_404()
+    accounts = accounts_for_user_query(user_id).order_by(Account.name).all()
     categories = Category.query.filter_by(is_active=True).order_by(Category.kind, Category.name).all()
 
     if request.method == 'POST':
@@ -2952,7 +3198,11 @@ def edit_transaction(transaction_id: int):
             transaction.notes = request.form.get('notes', '').strip() or None
             transaction.payee = request.form.get('payee', '').strip() or None
             transaction.reference_no = request.form.get('reference_no', '').strip() or None
-            transaction.account_id = int(request.form['account_id'])
+            account = accounts_for_user_query(user_id).filter(Account.id == int(request.form['account_id'])).first()
+            if not account:
+                flash('Please choose a valid account for your profile.', 'warning')
+                return redirect(url_for('edit_transaction', transaction_id=transaction_id))
+            transaction.account_id = account.id
             transaction.category_id = int(request.form['category_id'])
 
             db.session.commit()
@@ -2974,7 +3224,8 @@ def edit_transaction(transaction_id: int):
 @app.route('/transactions/<int:transaction_id>/delete', methods=['POST'])
 @login_required
 def delete_transaction(transaction_id: int):
-    transaction = Transaction.query.get_or_404(transaction_id)
+    user_id = current_user_id()
+    transaction = transactions_for_user_query(user_id).filter(Transaction.id == transaction_id).first_or_404()
     try:
         TransactionMeta.query.filter_by(transaction_id=transaction.id).delete(synchronize_session=False)
         db.session.delete(transaction)
@@ -2990,13 +3241,19 @@ def delete_transaction(transaction_id: int):
 @app.route('/accounts/add', methods=['GET', 'POST'])
 @login_required
 def add_account():
+    user_id = current_user_id()
     if request.method == 'POST':
         try:
+            requested_name = request.form['name'].strip()
+            unique_name = next_available_account_name(requested_name, user_id)
+            if unique_name != requested_name:
+                flash(f'Account name already existed. Saved as "{unique_name}".', 'info')
             account = Account(
-                name=request.form['name'].strip(),
+                name=unique_name,
                 account_type=request.form['account_type'],
                 opening_balance=Decimal(request.form['opening_balance'] or '0'),
                 currency=request.form['currency'].strip() or 'INR',
+                user_id=user_id,
             )
             db.session.add(account)
             db.session.commit()
@@ -3064,6 +3321,7 @@ def toggle_category(category_id: int):
 def import_statement():
     preview = []
     headers = []
+    user_id = current_user_id()
 
     if request.method == 'POST':
         file = request.files.get('statement_file')
@@ -3073,6 +3331,11 @@ def import_statement():
         amount_col = request.form.get('amount_col', 'Amount')
         type_col = request.form.get('type_col', 'Type')
         category_col = request.form.get('category_col', '')
+
+        account = accounts_for_user_query(user_id).filter(Account.id == account_id).first() if account_id else None
+        if account is None:
+            flash('Please choose one of your accounts before importing.', 'warning')
+            return redirect(url_for('import_statement'))
 
         if not file or not file.filename:
             flash('Please choose a CSV or Excel file.', 'warning')
@@ -3113,7 +3376,7 @@ def import_statement():
                     )
                     return render_template(
                         'import.html',
-                        accounts=Account.query.order_by(Account.name).all(),
+                        accounts=accounts_for_user_query(user_id).order_by(Account.name).all(),
                         preview=preview,
                         headers=headers,
                     )
@@ -3157,8 +3420,9 @@ def import_statement():
                         tx_type=tx_type,
                         notes='Imported from file',
                         reference_no=reference_no,
-                        account_id=account_id,
+                        account_id=account.id,
                         category_id=category.id,
+                        user_id=user_id,
                         source='import',
                     )
                     db.session.add(transaction)
@@ -3177,7 +3441,7 @@ def import_statement():
 
     return render_template(
         'import.html',
-        accounts=Account.query.order_by(Account.name).all(),
+        accounts=accounts_for_user_query(user_id).order_by(Account.name).all(),
         preview=preview,
         headers=headers,
     )
