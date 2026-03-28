@@ -21,6 +21,7 @@ import pandas as pd
 from flask import Flask, flash, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, inspect, text
+from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 def normalize_database_url(raw_url: Optional[str]) -> Optional[str]:
@@ -404,6 +405,16 @@ def ensure_ownership_schema_updates() -> None:
     with db.engine.begin() as connection:
         for sql in statements:
             connection.execute(text(sql))
+
+
+def run_ownership_schema_updates_safely() -> bool:
+    try:
+        ensure_ownership_schema_updates()
+        return True
+    except Exception:
+        db.session.rollback()
+        app.logger.exception('Failed to apply ownership schema updates.')
+        return False
 
 
 def current_user_id() -> Optional[int]:
@@ -918,13 +929,25 @@ def run_recurring_engine():
     user_id = current_user_id()
     if not user_id:
         return
-    ensure_user_workspace(user_id)
+    try:
+        ensure_user_workspace(user_id)
+    except OperationalError:
+        db.session.rollback()
+        if not run_ownership_schema_updates_safely():
+            return
+        ensure_user_workspace(user_id)
 
     today_key = datetime.utcnow().date().isoformat()
     if session.get('last_recurring_run') == today_key:
         return
 
-    created = process_recurring_transactions(user_id=user_id)
+    try:
+        created = process_recurring_transactions(user_id=user_id)
+    except OperationalError:
+        db.session.rollback()
+        if not run_ownership_schema_updates_safely():
+            return
+        created = process_recurring_transactions(user_id=user_id)
     session['last_recurring_run'] = today_key
     if created > 0:
         flash(f'Auto-posted {created} recurring transaction(s).', 'info')
@@ -3645,7 +3668,7 @@ def clean_description_filter(value: object) -> str:
 
 with app.app_context():
     db.create_all()
-    ensure_ownership_schema_updates()
+    run_ownership_schema_updates_safely()
     seed_defaults()
 
 
