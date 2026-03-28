@@ -404,7 +404,13 @@ def ensure_ownership_schema_updates() -> None:
         return
     with db.engine.begin() as connection:
         for sql in statements:
-            connection.execute(text(sql))
+            try:
+                connection.execute(text(sql))
+            except OperationalError as exc:
+                # Multiple workers can race on startup; ignore duplicate-column in that case.
+                if 'Duplicate column name' in str(exc):
+                    continue
+                raise
 
 
 def run_ownership_schema_updates_safely() -> bool:
