@@ -27,3 +27,7 @@ jobs:
       - name: Syntax check
         run: |
           python -m py_compile app.py wsgi.py
+
+      - name: Smoke test core flows
+        run: |
+          python verify_smoke_core_flows.py
