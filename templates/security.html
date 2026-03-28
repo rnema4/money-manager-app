@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card-soft bg-white p-4 mb-3">
+      <h4 class="mb-3">Account Security</h4>
+      <div class="mb-3">
+        <div class="fw-semibold">Email verification</div>
+        <div class="small text-muted mb-2">
+          {% if security.email_verified %}
+          Verified
+          {% else %}
+          Not verified
+          {% endif %}
+        </div>
+        <form method="post" action="{{ url_for('security_send_verification') }}">
+          <button class="btn btn-outline-primary btn-sm" {% if security.email_verified %}disabled{% endif %}>Generate verification link</button>
+        </form>
+      </div>
+
+      <hr>
+
+      <div class="mb-2 fw-semibold">Two-factor authentication (2FA)</div>
+      {% if security.two_factor_enabled %}
+      <div class="small text-success mb-2">2FA is enabled.</div>
+      <form method="post" action="{{ url_for('disable_two_factor') }}">
+        <button class="btn btn-outline-danger btn-sm">Disable 2FA</button>
+      </form>
+      {% else %}
+      <div class="small text-muted mb-2">Use this secret in authenticator app, then verify with one code.</div>
+      <form method="post" action="{{ url_for('setup_two_factor') }}">
+        <div class="mb-2">
+          <label class="form-label">Secret</label>
+          <input class="form-control" type="text" name="secret" value="{{ setup_secret }}" readonly>
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Authenticator Code</label>
+          <input class="form-control" type="text" name="code" maxlength="6" pattern="[0-9]{6}" required>
+        </div>
+        <button class="btn btn-success btn-sm">Enable 2FA</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="card-soft bg-white p-4">
+      <h5 class="mb-3">Backup and Restore</h5>
+      <a class="btn btn-outline-success btn-sm mb-3" href="{{ url_for('download_backup') }}">Download Backup (JSON)</a>
+      <form method="post" action="{{ url_for('restore_backup') }}" enctype="multipart/form-data">
+        <div class="mb-2">
+          <label class="form-label">Restore from backup</label>
+          <input type="file" class="form-control" name="backup_file" accept=".json" required>
+        </div>
+        <button class="btn btn-outline-primary btn-sm">Restore Backup</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card-soft bg-white p-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">Audit Log</h4>
+        <span class="text-muted small">Recent security events</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Details</th>
+              <th>IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in recent_logs %}
+            <tr>
+              <td>{{ log.created_at.strftime('%d-%m-%Y %I:%M %p') }}</td>
+              <td><span class="badge bg-light text-dark border">{{ log.action }}</span></td>
+              <td class="small text-muted">{{ log.details or '-' }}</td>
+              <td class="small text-muted">{{ log.ip_address or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-4">No audit logs yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="card-soft bg-white p-4 mb-4">
+      <h3 class="mb-4">Import Statement (CSV / Excel)</h3>
+      <form method="post" enctype="multipart/form-data">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Choose file</label>
+            <input type="file" class="form-control" name="statement_file" accept=".csv,.xlsx,.xls" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Account</label>
+            <select class="form-select" name="account_id" required>
+              {% for account in accounts %}
+              <option value="{{ account.id }}">{{ account.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3"><label class="form-label">Date column</label><input class="form-control" name="date_col" value="Date"></div>
+          <div class="col-md-3"><label class="form-label">Description column</label><input class="form-control" name="desc_col" value="Description"></div>
+          <div class="col-md-2"><label class="form-label">Amount column</label><input class="form-control" name="amount_col" value="Amount"></div>
+          <div class="col-md-2"><label class="form-label">Type column</label><input class="form-control" name="type_col" value="Type"></div>
+          <div class="col-md-2"><label class="form-label">Category column</label><input class="form-control" name="category_col" value="Category"></div>
+        </div>
+        <div class="mt-4 d-flex gap-2">
+          <button class="btn btn-outline-success" type="submit">Preview / Import</button>
+          <button class="btn btn-success" type="submit" name="do_import" value="1">Import Now</button>
+        </div>
+      </form>
+    </div>
+
+    {% if preview %}
+    <div class="card-soft bg-white p-4">
+      <h4 class="mb-3">File Preview</h4>
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              {% for header in headers %}
+              <th>{{ header }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in preview %}
+            <tr>
+              {% for header in headers %}
+              <td>{{ row[header] }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,782 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-3">
+    <div class="sidebar-box records-filter-panel">
+      <h4 class="mb-3">My filter</h4>
+      <form method="get" id="recordsFilterForm">
+        <div class="mb-3">
+          <label class="form-label">Search</label>
+          <input type="text" class="form-control" name="search" value="{{ filters.search }}">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Sort by</label>
+          <select class="form-select" name="sort">
+            <option value="date_desc" {% if filters.sort == 'date_desc' %}selected{% endif %}>Time (newest first)</option>
+            <option value="date_asc" {% if filters.sort == 'date_asc' %}selected{% endif %}>Time (oldest first)</option>
+            <option value="amount_desc" {% if filters.sort == 'amount_desc' %}selected{% endif %}>Amount (highest first)</option>
+            <option value="amount_asc" {% if filters.sort == 'amount_asc' %}selected{% endif %}>Amount (lowest first)</option>
+            <option value="desc_asc" {% if filters.sort == 'desc_asc' %}selected{% endif %}>Description (A to Z)</option>
+            <option value="desc_desc" {% if filters.sort == 'desc_desc' %}selected{% endif %}>Description (Z to A)</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Accounts</label>
+          <select class="form-select" name="account_id">
+            <option value="">All accounts</option>
+            {% for account in accounts %}
+            <option value="{{ account.id }}" {% if filters.account_id == account.id %}selected{% endif %}>{{ account.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Categories</label>
+          <select class="form-select" name="category_id">
+            <option value="">All categories</option>
+            {% for category in categories %}
+            <option value="{{ category.id }}" {% if filters.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Labels</label>
+          <select class="form-select" name="label">
+            <option value="" {% if not filters.label %}selected{% endif %}>All labels</option>
+            <option value="upi" {% if filters.label == 'upi' %}selected{% endif %}>UPI</option>
+            <option value="with_reference" {% if filters.label == 'with_reference' %}selected{% endif %}>With reference</option>
+            <option value="with_notes" {% if filters.label == 'with_notes' %}selected{% endif %}>With notes</option>
+            <option value="without_notes" {% if filters.label == 'without_notes' %}selected{% endif %}>Without notes</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Currencies</label>
+          <select class="form-select" name="currency">
+            <option value="">All currencies</option>
+            {% for currency in currencies %}
+            <option value="{{ currency }}" {% if filters.currency == currency %}selected{% endif %}>{{ currency }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Record types</label>
+          <select class="form-select" name="tx_type">
+            <option value="">All record types</option>
+            {% for item in ['income', 'expense', 'transfer'] %}
+            <option value="{{ item }}" {% if filters.tx_type == item %}selected{% endif %}>{{ item.title() }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Amount range</label>
+          <div class="row g-2">
+            <div class="col-6">
+              <input type="number" step="0.01" class="form-control" name="min_amount" value="{{ filters.min_amount }}" placeholder="Min">
+            </div>
+            <div class="col-6">
+              <input type="number" step="0.01" class="form-control" name="max_amount" value="{{ filters.max_amount }}" placeholder="Max">
+            </div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Transfers</label>
+          <select class="form-select" name="transfers">
+            <option value="include" {% if filters.transfers == 'include' %}selected{% endif %}>Include transfers</option>
+            <option value="exclude" {% if filters.transfers == 'exclude' %}selected{% endif %}>Exclude transfers</option>
+            <option value="only" {% if filters.transfers == 'only' %}selected{% endif %}>Only transfers</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Record states</label>
+          <select class="form-select" name="record_state">
+            <option value="" {% if not filters.record_state %}selected{% endif %}>All record states</option>
+            <option value="manual" {% if filters.record_state == 'manual' %}selected{% endif %}>Manual</option>
+            <option value="import" {% if filters.record_state == 'import' %}selected{% endif %}>Imported</option>
+          </select>
+        </div>
+        <div class="small text-muted mb-2">Filters apply automatically.</div>
+        <div class="d-grid">
+          <a href="{{ url_for('records') }}" class="btn btn-outline-secondary">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-9">
+    <div class="card-soft bg-white p-4">
+      <div class="records-command-hub mb-3">
+        <div class="records-command-top">
+          <div>
+            <h3 class="mb-0">Records</h3>
+            <div class="text-muted">Net total: {{ total|currency }}</div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <a
+              href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort) }}"
+              class="btn btn-outline-success"
+            >
+              Export Excel
+            </a>
+            <a href="{{ url_for('add_transaction') }}" class="btn btn-success">+ Add Record</a>
+          </div>
+        </div>
+        <div class="records-quick-nav mt-3">
+          <div class="records-nav-group">
+            <span class="records-nav-label">Type</span>
+            <button type="button" class="records-nav-pill {% if not filters.tx_type %}active{% endif %}" data-quick-target="tx_type" data-quick-value="">All</button>
+            <button type="button" class="records-nav-pill {% if filters.tx_type == 'expense' %}active{% endif %}" data-quick-target="tx_type" data-quick-value="expense">Expense</button>
+            <button type="button" class="records-nav-pill {% if filters.tx_type == 'income' %}active{% endif %}" data-quick-target="tx_type" data-quick-value="income">Income</button>
+            <button type="button" class="records-nav-pill {% if filters.tx_type == 'transfer' %}active{% endif %}" data-quick-target="tx_type" data-quick-value="transfer">Transfer</button>
+          </div>
+          <div class="records-nav-group">
+            <span class="records-nav-label">Sort</span>
+            <button type="button" class="records-nav-pill {% if filters.sort == 'date_desc' %}active{% endif %}" data-quick-target="sort" data-quick-value="date_desc">Newest</button>
+            <button type="button" class="records-nav-pill {% if filters.sort == 'date_asc' %}active{% endif %}" data-quick-target="sort" data-quick-value="date_asc">Oldest</button>
+            <button type="button" class="records-nav-pill {% if filters.sort == 'amount_desc' %}active{% endif %}" data-quick-target="sort" data-quick-value="amount_desc">Highest</button>
+            <button type="button" class="records-nav-pill {% if filters.sort == 'amount_asc' %}active{% endif %}" data-quick-target="sort" data-quick-value="amount_asc">Lowest</button>
+          </div>
+        </div>
+        <div class="records-active-filters mt-2">
+          <span class="records-filter-chip records-filter-chip-muted">Visible <strong id="recordsVisibleCount">{{ transactions|length }}</strong></span>
+          {% if filters.search %}<span class="records-filter-chip"><i class="bi bi-search"></i> {{ filters.search }}</span>{% endif %}
+          {% if filters.account_id %}<span class="records-filter-chip">Account selected</span>{% endif %}
+          {% if filters.category_id %}<span class="records-filter-chip">Category selected</span>{% endif %}
+          {% if filters.currency %}<span class="records-filter-chip">Currency {{ filters.currency }}</span>{% endif %}
+          {% if filters.label %}<span class="records-filter-chip">Label {{ filters.label.replace('_', ' ')|title }}</span>{% endif %}
+          {% if filters.record_state %}<span class="records-filter-chip">{{ filters.record_state.title() }} only</span>{% endif %}
+          {% if filters.min_amount or filters.max_amount %}<span class="records-filter-chip">Amount range</span>{% endif %}
+          {% if not (filters.search or filters.account_id or filters.category_id or filters.currency or filters.label or filters.record_state or filters.min_amount or filters.max_amount or filters.tx_type) %}
+          <span class="records-filter-chip records-filter-chip-muted">No advanced filters</span>
+          {% endif %}
+          <a href="{{ url_for('records') }}" class="records-clear-link">Clear all</a>
+        </div>
+      </div>
+
+      <div class="bulk-action-bar d-none" id="bulkActionBar">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <div class="fw-semibold"><span id="bulkSelectedCount">0</span> selected</div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-success" id="bulkEditBtn">Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-success" id="bulkExportBtn">Export</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="bulkDeleteBtn">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <form method="post" action="{{ url_for('bulk_export_records') }}" id="bulkExportForm" class="d-none">
+        <input type="hidden" name="selected_ids_csv" id="bulkExportIds">
+      </form>
+      <form method="post" action="{{ url_for('bulk_delete_records') }}" id="bulkDeleteForm" class="d-none">
+        <input type="hidden" name="selected_ids_csv" id="bulkDeleteIds">
+      </form>
+
+      <div class="table-responsive">
+        <table class="table align-middle" id="recordsDataTable">
+          <thead>
+            <tr>
+              <th style="width: 36px;">
+                <input class="form-check-input" type="checkbox" id="selectAllRecords">
+              </th>
+              <th>
+                <button type="button" class="records-sort-trigger" data-sort-col="date">Date <i class="bi bi-arrow-down-up"></i></button>
+              </th>
+              <th>
+                <button type="button" class="records-sort-trigger" data-sort-col="description">Description <i class="bi bi-arrow-down-up"></i></button>
+              </th>
+              <th><button type="button" class="records-sort-trigger" data-sort-col="account">Account <i class="bi bi-arrow-down-up"></i></button></th>
+              <th><button type="button" class="records-sort-trigger" data-sort-col="category">Category <i class="bi bi-arrow-down-up"></i></button></th>
+              <th><button type="button" class="records-sort-trigger" data-sort-col="type">Type <i class="bi bi-arrow-down-up"></i></button></th>
+              <th class="text-end">
+                <button type="button" class="records-sort-trigger records-sort-trigger-end" data-sort-col="amount">Amount <i class="bi bi-arrow-down-up"></i></button>
+              </th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody id="recordsInteractiveBody">
+            {% for tx in transactions %}
+            {% set meta = metadata_map.get(tx.id) %}
+            <tr
+              data-row-id="{{ tx.id }}"
+              data-date="{{ tx.tx_date.isoformat() }}"
+              data-description="{{ tx.description|clean_description }}"
+              data-account="{{ tx.account.name }}"
+              data-category="{{ tx.category.name }}"
+              data-type="{{ tx.tx_type }}"
+              data-amount="{{ tx.amount }}"
+              data-search-haystack="{{ (tx.description|clean_description ~ ' ' ~ (tx.notes or '') ~ ' ' ~ tx.account.name ~ ' ' ~ tx.category.name ~ ' ' ~ tx.tx_type ~ ' ' ~ (meta.label if meta else '') ~ ' ' ~ (meta.payment_type if meta else ''))|lower }}"
+            >
+              <td>
+                <input class="form-check-input record-select-checkbox" type="checkbox" value="{{ tx.id }}">
+              </td>
+              <td>{{ tx.tx_date.strftime('%d-%m-%Y %I:%M %p') }}</td>
+              <td>
+                <div class="fw-semibold">{{ tx.description|clean_description }}</div>
+                <div class="text-muted small">{{ tx.notes or '-' }}</div>
+                {% if meta and (meta.label or meta.payment_type) %}
+                <div class="mt-1 d-flex gap-1 flex-wrap">
+                  {% if meta.label %}
+                  <span class="badge rounded-pill text-bg-secondary">Label: {{ meta.label }}</span>
+                  {% endif %}
+                  {% if meta.payment_type %}
+                  <span class="badge rounded-pill text-bg-light border">Payment: {{ meta.payment_type.replace('_', ' ')|title }}</span>
+                  {% endif %}
+                </div>
+                {% endif %}
+              </td>
+              <td>{{ tx.account.name }}</td>
+              <td>
+                <span class="badge rounded-pill px-3 py-2" style="background: {{ tx.category.color or '#6c757d' }};">
+                  <i class="{{ tx.category.icon or 'bi bi-tag' }} me-1"></i>{{ tx.category.name }}
+                </span>
+              </td>
+              <td><span class="badge bg-light text-primary border">{{ tx.tx_type }}</span></td>
+              <td class="text-end {% if tx.tx_type == 'income' %}text-success{% elif tx.tx_type == 'expense' %}text-danger{% endif %}">
+                {% if tx.tx_type == 'expense' %}-{% endif %}{{ tx.amount|currency }}
+              </td>
+              <td class="text-end">
+                <div class="d-inline-flex gap-1">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('edit_transaction', transaction_id=tx.id) }}">Edit</a>
+                  <form method="post" action="{{ url_for('delete_transaction', transaction_id=tx.id) }}" onsubmit="return confirm('Delete this record?');">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No records found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bulk-edit-modal-overlay d-none" id="bulkEditModalOverlay">
+  <div class="bulk-edit-modal-card">
+    <form method="post" action="{{ url_for('bulk_edit_records') }}" id="bulkEditForm">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Edit Selected Records</h5>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkEditCloseBtn">Close</button>
+      </div>
+      <input type="hidden" name="selected_ids_csv" id="bulkEditIds">
+      <div class="small text-muted mb-3">Only filled fields will be updated for selected records.</div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Category</label>
+          <select class="form-select" name="category_id">
+            <option value="">No change</option>
+            {% for category in categories %}
+            <option value="{{ category.id }}">{{ category.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Payee</label>
+          <input type="text" class="form-control" name="payee" placeholder="No change if empty">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Payment type</label>
+          <select class="form-select" name="payment_type">
+            <option value="">No change</option>
+            {% for item in payment_type_options %}
+            <option value="{{ item }}">{{ item.replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Label</label>
+          <input type="text" class="form-control" name="label" placeholder="No change if empty">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Note</label>
+          <textarea class="form-control" name="notes" rows="3" placeholder="No change if empty"></textarea>
+        </div>
+      </div>
+      <div class="mt-3 d-flex gap-2 justify-content-end">
+        <button type="button" class="btn btn-outline-secondary" id="bulkEditCancelBtn">Cancel</button>
+        <button class="btn btn-success" type="submit">Save changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+.records-filter-panel {
+  position: sticky;
+  top: 82px;
+  border: 1px solid #273244;
+  border-radius: 16px;
+  background: linear-gradient(170deg, rgba(12, 18, 30, 0.96) 0%, rgba(15, 24, 39, 0.96) 100%);
+  box-shadow: 0 20px 40px rgba(2, 6, 23, 0.25);
+}
+.records-command-hub {
+  border: 1px solid #253042;
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14) 0%, transparent 35%),
+    linear-gradient(160deg, rgba(9, 15, 26, 0.9) 0%, rgba(12, 20, 35, 0.9) 100%);
+}
+.records-command-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+.records-quick-nav {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+.records-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.records-nav-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8ba3c2;
+  margin-right: 0.2rem;
+}
+.records-nav-pill {
+  border: 1px solid #314056;
+  background: rgba(15, 23, 42, 0.65);
+  color: #d3e1f4;
+  border-radius: 999px;
+  padding: 0.24rem 0.62rem;
+  font-size: 0.82rem;
+  line-height: 1.25;
+  transition: all 0.15s ease;
+}
+.records-nav-pill:hover {
+  border-color: #3b82f6;
+  color: #f8fbff;
+}
+.records-nav-pill.active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.16);
+  color: #bbf7d0;
+}
+.records-active-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.records-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.26rem;
+  border: 1px solid #2f4058;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.52);
+  color: #ccdaeb;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.76rem;
+}
+.records-filter-chip-muted {
+  color: #90a6c2;
+}
+.records-clear-link {
+  margin-left: auto;
+  color: #93c5fd;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+.records-clear-link:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+.records-sort-trigger {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #dbe7f7;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  cursor: pointer;
+}
+.records-sort-trigger i {
+  font-size: 0.78rem;
+  color: #7f95b3;
+}
+.records-sort-trigger-end {
+  margin-left: auto;
+}
+.bulk-action-bar {
+  border: 1px solid #dce6d4;
+  background: #f4fbf2;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.9rem;
+}
+.bulk-edit-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+  z-index: 1080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.bulk-edit-modal-card {
+  width: min(860px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: #111827;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 22px 48px rgba(2, 6, 23, 0.45);
+}
+.bulk-edit-modal-card .form-control,
+.bulk-edit-modal-card .form-select {
+  background: #0b1220;
+  border-color: #2b3543;
+  color: #e5e7eb;
+}
+.bulk-edit-modal-card .form-control::placeholder {
+  color: #8aa0b8;
+}
+.bulk-edit-modal-card .text-muted {
+  color: #9aa9bb !important;
+}
+.records-row-selected {
+  background: rgba(34, 197, 94, 0.08);
+}
+@media (max-width: 991px) {
+  .records-filter-panel {
+    position: static;
+  }
+  .records-clear-link {
+    margin-left: 0;
+  }
+}
+</style>
+
+<script>
+(() => {
+  const form = document.getElementById('recordsFilterForm');
+  if (!form) return;
+
+  const searchInput = form.querySelector('input[name="search"]');
+  const selectFields = form.querySelectorAll('select');
+  const amountFields = form.querySelectorAll('input[name="min_amount"], input[name="max_amount"]');
+
+  selectFields.forEach((field) => {
+    field.addEventListener('change', () => form.submit());
+  });
+
+  amountFields.forEach((field) => {
+    field.addEventListener('change', () => form.submit());
+  });
+
+  const quickButtons = document.querySelectorAll('.records-nav-pill[data-quick-target]');
+  quickButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = button.getAttribute('data-quick-target');
+      const value = button.getAttribute('data-quick-value') || '';
+      if (!target) return;
+      const targetField = form.querySelector(`[name="${target}"]`);
+      if (!targetField) return;
+      targetField.value = value;
+      form.submit();
+    });
+  });
+
+  const selectAll = document.getElementById('selectAllRecords');
+  const checkboxes = Array.from(document.querySelectorAll('.record-select-checkbox'));
+  const bar = document.getElementById('bulkActionBar');
+  const countEl = document.getElementById('bulkSelectedCount');
+  const bulkExportBtn = document.getElementById('bulkExportBtn');
+  const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+  const bulkEditBtn = document.getElementById('bulkEditBtn');
+  const bulkExportIds = document.getElementById('bulkExportIds');
+  const bulkDeleteIds = document.getElementById('bulkDeleteIds');
+  const bulkEditIds = document.getElementById('bulkEditIds');
+  const bulkExportForm = document.getElementById('bulkExportForm');
+  const bulkDeleteForm = document.getElementById('bulkDeleteForm');
+  const bulkEditModalOverlay = document.getElementById('bulkEditModalOverlay');
+  const bulkEditCloseBtn = document.getElementById('bulkEditCloseBtn');
+  const bulkEditCancelBtn = document.getElementById('bulkEditCancelBtn');
+  const recordsBody = document.getElementById('recordsInteractiveBody');
+
+  function visibleCheckboxes() {
+    return checkboxes.filter((item) => {
+      const row = item.closest('tr');
+      return row && row.style.display !== 'none';
+    });
+  }
+
+  function selectedIds() {
+    return checkboxes.filter((item) => item.checked).map((item) => item.value);
+  }
+
+  function setBulkEditModalVisible(show) {
+    if (!bulkEditModalOverlay) return;
+    bulkEditModalOverlay.classList.toggle('d-none', !show);
+    document.body.classList.toggle('overflow-hidden', show);
+  }
+
+  function syncBulkUI() {
+    const ids = selectedIds();
+    const hasSelection = ids.length > 0;
+    const visibleRows = visibleCheckboxes();
+    const visibleSelected = visibleRows.filter((item) => item.checked).length;
+    const allSelected = visibleRows.length > 0 && visibleSelected === visibleRows.length;
+    if (selectAll) selectAll.checked = allSelected;
+    if (bar) bar.classList.toggle('d-none', !hasSelection);
+    if (countEl) countEl.textContent = String(ids.length);
+    if (!hasSelection) setBulkEditModalVisible(false);
+
+    const csv = ids.join(',');
+    if (bulkExportIds) bulkExportIds.value = csv;
+    if (bulkDeleteIds) bulkDeleteIds.value = csv;
+    if (bulkEditIds) bulkEditIds.value = csv;
+
+    checkboxes.forEach((item) => {
+      const row = item.closest('tr');
+      if (!row) return;
+      row.classList.toggle('records-row-selected', item.checked);
+    });
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      visibleCheckboxes().forEach((item) => {
+        item.checked = selectAll.checked;
+      });
+      syncBulkUI();
+    });
+  }
+
+  checkboxes.forEach((item) => {
+    item.addEventListener('change', syncBulkUI);
+  });
+  if (recordsBody) {
+    recordsBody.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (!target.classList.contains('record-select-checkbox')) return;
+      syncBulkUI();
+    });
+  }
+
+  if (bulkExportBtn && bulkExportForm) {
+    bulkExportBtn.addEventListener('click', () => {
+      if (!selectedIds().length) return;
+      bulkExportForm.submit();
+    });
+  }
+
+  if (bulkDeleteBtn && bulkDeleteForm) {
+    bulkDeleteBtn.addEventListener('click', () => {
+      const ids = selectedIds();
+      if (!ids.length) return;
+      if (!confirm(`Delete ${ids.length} selected record(s)?`)) return;
+      bulkDeleteForm.submit();
+    });
+  }
+
+  if (bulkEditBtn) {
+    bulkEditBtn.addEventListener('click', () => {
+      if (!selectedIds().length) return;
+      setBulkEditModalVisible(true);
+    });
+  }
+
+  [bulkEditCloseBtn, bulkEditCancelBtn].forEach((btn) => {
+    if (!btn) return;
+    btn.addEventListener('click', () => setBulkEditModalVisible(false));
+  });
+
+  if (bulkEditModalOverlay) {
+    bulkEditModalOverlay.addEventListener('click', (event) => {
+      if (event.target === bulkEditModalOverlay) {
+        setBulkEditModalVisible(false);
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      setBulkEditModalVisible(false);
+    }
+  });
+  document.addEventListener('records:rows-updated', syncBulkUI);
+
+  window.syncBulkUI = syncBulkUI;
+  syncBulkUI();
+})();
+</script>
+<script type="module">
+(async () => {
+  let tanstack;
+  try {
+    tanstack = await import('https://cdn.jsdelivr.net/npm/@tanstack/table-core@8.21.3/+esm');
+  } catch (error) {
+    console.warn('TanStack Table could not be loaded. Falling back to static table.', error);
+    return;
+  }
+
+  const {
+    createTable,
+    getCoreRowModel,
+    getFilteredRowModel,
+    getSortedRowModel,
+    functionalUpdate,
+  } = tanstack;
+
+  const tableEl = document.getElementById('recordsDataTable');
+  const tbody = document.getElementById('recordsInteractiveBody');
+  if (!tableEl || !tbody) return;
+
+  const rowElements = Array.from(tbody.querySelectorAll('tr[data-row-id]'));
+  if (!rowElements.length) return;
+
+  const rowMap = new Map();
+  const data = rowElements.map((rowEl) => {
+    const id = String(rowEl.dataset.rowId || '');
+    const entry = {
+      id,
+      date: Date.parse(rowEl.dataset.date || '') || 0,
+      description: String(rowEl.dataset.description || '').toLowerCase(),
+      account: String(rowEl.dataset.account || '').toLowerCase(),
+      category: String(rowEl.dataset.category || '').toLowerCase(),
+      type: String(rowEl.dataset.type || '').toLowerCase(),
+      amount: Number(rowEl.dataset.amount || 0),
+      searchHaystack: String(rowEl.dataset.searchHaystack || '').toLowerCase(),
+    };
+    rowMap.set(id, rowEl);
+    return entry;
+  });
+
+  const sortMap = {
+    date_desc: [{ id: 'date', desc: true }],
+    date_asc: [{ id: 'date', desc: false }],
+    amount_desc: [{ id: 'amount', desc: true }],
+    amount_asc: [{ id: 'amount', desc: false }],
+    desc_asc: [{ id: 'description', desc: false }],
+    desc_desc: [{ id: 'description', desc: true }],
+  };
+  let sorting = sortMap[{{ filters.sort|tojson }}] || [];
+  const searchInput = document.querySelector('#recordsFilterForm input[name="search"]');
+  let globalFilter = String(searchInput?.value || '').trim().toLowerCase();
+
+  const columns = [
+    { id: 'date', accessorFn: (row) => row.date },
+    { id: 'description', accessorFn: (row) => row.description },
+    { id: 'account', accessorFn: (row) => row.account },
+    { id: 'category', accessorFn: (row) => row.category },
+    { id: 'type', accessorFn: (row) => row.type },
+    { id: 'amount', accessorFn: (row) => row.amount },
+  ];
+
+  const table = createTable({
+    data,
+    columns,
+    state: { sorting, globalFilter },
+    onSortingChange: (updater) => {
+      sorting = functionalUpdate(updater, sorting);
+      render();
+    },
+    onGlobalFilterChange: (updater) => {
+      globalFilter = functionalUpdate(updater, globalFilter);
+      render();
+    },
+    globalFilterFn: (row, _columnId, filterValue) => {
+      const needle = String(filterValue || '').toLowerCase().trim();
+      if (!needle) return true;
+      return row.original.searchHaystack.includes(needle);
+    },
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const sortButtons = Array.from(document.querySelectorAll('.records-sort-trigger[data-sort-col]'));
+  function updateSortButtons() {
+    const current = table.getState().sorting?.[0];
+    sortButtons.forEach((btn) => {
+      const column = btn.getAttribute('data-sort-col');
+      const icon = btn.querySelector('i');
+      if (!column || !icon) return;
+
+      icon.classList.remove('bi-arrow-down-up', 'bi-sort-down', 'bi-sort-down-alt');
+      if (!current || current.id !== column) {
+        btn.dataset.sortState = '';
+        icon.classList.add('bi-arrow-down-up');
+        return;
+      }
+      if (current.desc) {
+        btn.dataset.sortState = 'desc';
+        icon.classList.add('bi-sort-down');
+      } else {
+        btn.dataset.sortState = 'asc';
+        icon.classList.add('bi-sort-down-alt');
+      }
+    });
+  }
+
+  function render() {
+    table.setOptions((prev) => ({
+      ...prev,
+      state: { ...prev.state, sorting, globalFilter },
+    }));
+
+    const rows = table.getRowModel().rows;
+    const visible = new Set(rows.map((row) => String(row.original.id)));
+    rows.forEach((row) => {
+      const tr = rowMap.get(String(row.original.id));
+      if (!tr) return;
+      tr.style.display = '';
+      tbody.appendChild(tr);
+    });
+    rowMap.forEach((tr, id) => {
+      if (!visible.has(id)) tr.style.display = 'none';
+    });
+
+    const visibleCount = document.getElementById('recordsVisibleCount');
+    if (visibleCount) visibleCount.textContent = String(rows.length);
+    updateSortButtons();
+    document.dispatchEvent(new Event('records:rows-updated'));
+  }
+
+  sortButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const col = btn.getAttribute('data-sort-col');
+      if (!col) return;
+      const current = table.getState().sorting?.[0];
+      if (!current || current.id !== col) {
+        table.setSorting([{ id: col, desc: false }]);
+        return;
+      }
+      if (!current.desc) {
+        table.setSorting([{ id: col, desc: true }]);
+        return;
+      }
+      table.setSorting([]);
+    });
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') event.preventDefault();
+    });
+    searchInput.addEventListener('input', () => {
+      table.setGlobalFilter(String(searchInput.value || '').toLowerCase());
+    });
+  }
+
+  render();
+})();
+</script>
+{% endblock %}

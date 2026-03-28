@@ -1,0 +1,973 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="dashboard-shell">
+  <section class="card-soft bg-white p-3 mb-4 time-control-card">
+    <form method="get" id="dashboardDateForm">
+      <input type="hidden" name="anchor" id="dashboardAnchorInput" value="{{ selected_anchor }}">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+          {% if prev_period_url %}
+          <a href="{{ prev_period_url }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+          {% else %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" disabled><i class="bi bi-chevron-left"></i></button>
+          {% endif %}
+          {% if next_period_url %}
+          <a href="{{ next_period_url }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+          {% else %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" disabled><i class="bi bi-chevron-right"></i></button>
+          {% endif %}
+          <span class="fw-semibold period-chip">{{ period_label }}</span>
+        </div>
+        <button class="btn btn-success btn-sm" type="submit">Apply</button>
+      </div>
+
+      <div class="row g-2 align-items-end">
+        <div class="col-md-4 col-lg-3">
+          <label class="form-label mb-1 small text-muted">Date range</label>
+          <select class="form-select" name="period" id="dashboardPeriodSelect">
+            <option value="today" {% if selected_period == 'today' %}selected{% endif %}>Today</option>
+            <option value="week" {% if selected_period == 'week' %}selected{% endif %}>This week</option>
+            <option value="month" {% if selected_period == 'month' %}selected{% endif %}>This month</option>
+            <option value="year" {% if selected_period == 'year' %}selected{% endif %}>This year</option>
+            <option value="rolling7" {% if selected_period == 'rolling7' %}selected{% endif %}>Last 7 days</option>
+            <option value="rolling30" {% if selected_period == 'rolling30' %}selected{% endif %}>Last 30 days</option>
+            <option value="rolling90" {% if selected_period == 'rolling90' %}selected{% endif %}>Last 90 days</option>
+            <option value="rolling365" {% if selected_period == 'rolling365' %}selected{% endif %}>Last 12 months</option>
+            <option value="custom" {% if selected_period == 'custom' %}selected{% endif %}>Custom range</option>
+            <option value="all" {% if selected_period == 'all' %}selected{% endif %}>All</option>
+          </select>
+        </div>
+        <div class="col-md-3 col-lg-2 custom-range-field">
+          <label class="form-label mb-1 small text-muted">Start</label>
+          <input type="date" class="form-control" name="start" id="dashboardStartDate" value="{{ selected_start }}">
+        </div>
+        <div class="col-md-3 col-lg-2 custom-range-field">
+          <label class="form-label mb-1 small text-muted">End</label>
+          <input type="date" class="form-control" name="end" id="dashboardEndDate" value="{{ selected_end }}">
+        </div>
+      </div>
+
+      <div class="quick-range-links mt-2">
+        <a href="{{ url_for('dashboard', period='today', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">Today</a>
+        <a href="{{ url_for('dashboard', period='week', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">This week</a>
+        <a href="{{ url_for('dashboard', period='month', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">This month</a>
+        <a href="{{ url_for('dashboard', period='year', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">This year</a>
+        <a href="{{ url_for('dashboard', period='rolling7', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">7 days</a>
+        <a href="{{ url_for('dashboard', period='rolling30', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">30 days</a>
+        <a href="{{ url_for('dashboard', period='rolling90', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">90 days</a>
+        <a href="{{ url_for('dashboard', period='rolling365', anchor=today_iso) }}" class="btn btn-outline-secondary btn-sm">12 months</a>
+        <a href="{{ url_for('dashboard', period='all') }}" class="btn btn-outline-secondary btn-sm">All</a>
+      </div>
+    </form>
+  </section>
+
+  <div class="row g-3 mb-4">
+    <div class="col-lg-3 col-md-6">
+      <div class="exec-kpi-card">
+        <div class="exec-kpi-icon"><i class="bi bi-cash-coin"></i></div>
+        <div class="exec-kpi-label">Daily Burn</div>
+        <div class="exec-kpi-value">{{ burn_rate_daily|currency }}</div>
+        <div class="kpi-sparkline-shell"><canvas id="kpiSparkBurn"></canvas></div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+      <div class="exec-kpi-card">
+        <div class="exec-kpi-icon"><i class="bi bi-hourglass-split"></i></div>
+        <div class="exec-kpi-label">Runway (Days)</div>
+        <div class="exec-kpi-value">{{ '%.1f'|format(runway_days) }}</div>
+        <div class="kpi-sparkline-shell"><canvas id="kpiSparkRunway"></canvas></div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+      <div class="exec-kpi-card">
+        <div class="exec-kpi-icon"><i class="bi bi-bank2"></i></div>
+        <div class="exec-kpi-label">Active Accounts</div>
+        <div class="exec-kpi-value">{{ accounts_count }}</div>
+        <div class="kpi-sparkline-shell"><canvas id="kpiSparkAccounts"></canvas></div>
+      </div>
+    </div>
+    <div class="col-lg-3 col-md-6">
+      <div class="exec-kpi-card">
+        <div class="exec-kpi-icon"><i class="bi bi-lightning-charge"></i></div>
+        <div class="exec-kpi-label">Top Expense Driver</div>
+        <div class="exec-kpi-value exec-kpi-text">{{ highest_expense_category }}</div>
+        <div class="kpi-sparkline-shell"><canvas id="kpiSparkDriver"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="command-center mb-4">
+    <div class="row g-3">
+      <div class="col-xl-8">
+        <div class="command-card h-100">
+          <div class="command-head">
+            <div>
+              <div class="command-title">Command Center</div>
+              <div class="command-subtitle">High-signal insights for {{ period_label }}</div>
+            </div>
+            <span class="command-badge">{{ tx_count }} records</span>
+          </div>
+          <div class="command-chip-row">
+            <span class="command-chip"><i class="bi bi-calendar3"></i> {{ period_days }} day window</span>
+            <span class="command-chip"><i class="bi bi-graph-up-arrow"></i> {{ busiest_day_count }} records on {{ busiest_day_label }}</span>
+            <span class="command-chip"><i class="bi bi-bullseye"></i> {{ highest_expense_category }} {{ '%.1f'|format(top_expense_share_pct) }}%</span>
+          </div>
+          <div class="command-metrics">
+            <div class="command-metric">
+              <span>Avg transactions / day</span>
+              <strong>{{ '%.1f'|format(avg_daily_tx) }}</strong>
+            </div>
+            <div class="command-metric">
+              <span>Avg net / day</span>
+              <strong class="{% if avg_daily_net < 0 %}text-danger{% else %}text-success{% endif %}">{{ avg_daily_net|currency }}</strong>
+            </div>
+            <div class="command-metric">
+              <span>Largest expense</span>
+              <strong>{{ largest_expense_amount|currency }}</strong>
+              <div class="command-metric-note">{{ largest_expense_desc|clean_description|truncate(42, True, '...') }}</div>
+            </div>
+            <div class="command-metric">
+              <span>Expense concentration</span>
+              <strong>{{ '%.1f'|format(top_expense_share_pct) }}%</strong>
+              <div class="command-progress"><span style="width: {{ top_expense_share_pct if top_expense_share_pct < 100 else 100 }}%;"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-4">
+        <div class="command-card h-100">
+          <div class="command-title">Action Feed</div>
+          <div class="command-notes">
+            {% for note in command_center_notes %}
+            <div class="command-note"><i class="bi bi-dot"></i><span>{{ note }}</span></div>
+            {% endfor %}
+          </div>
+          <div class="command-actions mt-3">
+            <a href="{{ url_for('records') }}" class="btn btn-outline-light btn-sm">Open records</a>
+            <a href="{{ url_for('analytics') }}" class="btn btn-light btn-sm">Open analytics</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="row g-3 mb-4">
+    <div class="col-lg-8">
+      <div class="premium-hero">
+        <div>
+          <div class="hero-label">Total Balance</div>
+          <div class="hero-value">{{ balance|currency }}</div>
+          <div class="hero-meta">Range net {{ cash_flow|currency }}</div>
+          <div class="hero-kpis">
+            <span class="hero-kpi income">Income {{ income_total|currency }}</span>
+            <span class="hero-kpi expense">Expense {{ expense_total|currency }}</span>
+          </div>
+        </div>
+        <div class="hero-actions">
+          <a href="{{ url_for('add_transaction') }}" class="btn btn-light btn-sm">+ Add Entry</a>
+          <a href="{{ url_for('records') }}" class="btn btn-outline-light btn-sm">View Records</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card-soft bg-white p-3 h-100">
+        <div class="section-title mb-3">Period Pulse</div>
+        <div class="pulse-grid">
+          <div class="pulse-item">
+            <span>Income</span>
+            <strong class="text-success">{{ income_total|currency }}</strong>
+          </div>
+          <div class="pulse-item">
+            <span>Expense</span>
+            <strong class="text-danger">{{ expense_total|currency }}</strong>
+          </div>
+          <div class="pulse-item">
+            <span>Net</span>
+            <strong class="{% if cash_flow < 0 %}text-danger{% else %}text-success{% endif %}">{{ cash_flow|currency }}</strong>
+          </div>
+          <div class="pulse-item">
+            <span>Savings Rate</span>
+            <strong class="{% if savings_rate < 0 %}text-danger{% else %}text-success{% endif %}">{{ '%.1f'|format(savings_rate) }}%</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-lg-8">
+      <div class="card-soft bg-white p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="section-title mb-0">Top Expense Drivers</div>
+          <span class="badge text-bg-light border">{{ period_label }}</span>
+        </div>
+        {% for row in top_month_categories %}
+        <div class="driver-row">
+          <div class="driver-main">
+            <span class="driver-name">{{ row.category }}</span>
+            <span class="driver-value">{{ row.total|currency }}</span>
+          </div>
+          {% set ratio = ((row.total|float) / (current_month_expense|float) * 100) if (current_month_expense|float) > 0 else 0 %}
+          <div class="driver-bar">
+            <span style="width: {{ ratio if ratio < 100 else 100 }}%;"></span>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-muted small">No expense data in this range yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card-soft bg-white p-4 h-100">
+        <div class="section-title mb-3">Due Reminders</div>
+        <div class="text-muted small mb-2">Upcoming recurring (7 days)</div>
+        {% for item in upcoming_recurring %}
+        <div class="reminder-row">
+          <span>{{ item.name }}</span>
+          <span>{{ item.next_run_date.strftime('%d %b') }}</span>
+        </div>
+        {% else %}
+        <div class="text-muted small mb-2">No recurring due soon.</div>
+        {% endfor %}
+
+        <div class="text-muted small mt-3 mb-2">Bills due (10 days)</div>
+        {% for bill in upcoming_bills %}
+        <div class="reminder-row">
+          <span>{{ bill.name }}</span>
+          <span>{{ bill.next_due_date.strftime('%d %b') }}</span>
+        </div>
+        {% else %}
+        <div class="text-muted small mb-2">No bills due soon.</div>
+        {% endfor %}
+
+        {% if overdue_bills %}
+        <div class="text-danger small mt-3">Overdue: {{ overdue_bills|length }} bill(s)</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    {% for item in accounts %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card-soft bg-white p-3 h-100 account-tile">
+        <div class="account-top">
+          <span class="text-muted small">{{ item.account.account_type }}</span>
+          <span class="currency-chip">{{ item.account.currency }}</span>
+        </div>
+        <div class="fw-semibold">{{ item.account.name }}</div>
+        <div class="account-balance">{{ item.balance|currency }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-8">
+      <div class="card-soft bg-white p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="mb-0">Income vs Expense Trend</h4>
+          <span class="badge text-bg-light border">Auto grouped</span>
+        </div>
+        <div class="chart-frame chart-frame-lg">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="card-soft bg-white p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="mb-0">Expense Split</h4>
+          <span class="badge text-bg-light border">Category mix</span>
+        </div>
+        {% if expense_pie_labels %}
+        <div class="expense-split-wrap">
+          <div class="expense-chart-shell">
+            <canvas id="expensePieChart"></canvas>
+            <div class="expense-chart-center">
+              <div class="expense-center-label">Total Expense</div>
+              <div class="expense-center-value">{{ expense_total|currency }}</div>
+            </div>
+          </div>
+          <div id="expenseLegend" class="expense-legend"></div>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No expense records yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-12">
+      <div class="card-soft bg-white p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="mb-0">Recent Records</h4>
+          <a href="{{ url_for('records') }}" class="btn btn-sm btn-outline-secondary">View all</a>
+        </div>
+        {% for tx in transactions %}
+        <div class="recent-row">
+          <div class="recent-main">
+            <div class="fw-semibold">{{ tx.description|clean_description }}</div>
+            <div class="text-muted small">{{ tx.account.name }} | {{ tx.category.name }} | {{ tx.tx_date.strftime('%d %b %Y %I:%M %p') }}</div>
+          </div>
+          <div class="record-amount {{ tx.tx_type }}">
+            {% if tx.tx_type == 'expense' %}-{% endif %}{{ tx.amount|currency }}
+          </div>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No records yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.dashboard-shell .section-title {
+  font-weight: 700;
+  color: #0f172a;
+}
+.dashboard-shell {
+  position: relative;
+}
+.dashboard-shell::before {
+  content: '';
+  position: absolute;
+  top: -50px;
+  right: -20px;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(14,165,233,0.18) 0%, rgba(14,165,233,0.0) 68%);
+  pointer-events: none;
+}
+.time-control-card {
+  border: 1px solid #dbe7f4;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+.exec-kpi-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid #d8e4f2;
+  background: linear-gradient(135deg, #ffffff 0%, #f4f8ff 100%);
+  padding: 0.9rem 0.95rem;
+  min-height: 124px;
+}
+.exec-kpi-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -40px -40px auto;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(14,165,233,0.16) 0%, rgba(14,165,233,0.0) 72%);
+}
+.exec-kpi-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  color: #f8fafc;
+  margin-bottom: 0.32rem;
+  font-size: 0.86rem;
+}
+.exec-kpi-label {
+  color: #64748b;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.exec-kpi-value {
+  margin-top: 0.2rem;
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 1.2rem;
+}
+.exec-kpi-text {
+  font-size: 1rem;
+}
+.kpi-sparkline-shell {
+  height: 34px;
+  margin-top: 0.38rem;
+}
+.kpi-sparkline-shell canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.period-chip {
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  background: #eef5ff;
+  border: 1px solid #d7e4f4;
+}
+.quick-range-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.command-card {
+  border-radius: 18px;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.22) 0%, transparent 40%),
+    linear-gradient(150deg, #0b1222 0%, #0e1c34 52%, #0b162a 100%);
+  color: #e5eefb;
+  padding: 1rem 1.05rem;
+  box-shadow: 0 16px 38px rgba(2, 8, 24, 0.24);
+}
+.command-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+.command-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f8fbff;
+}
+.command-subtitle {
+  font-size: 0.82rem;
+  color: #9cb0cd;
+}
+.command-badge {
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.76rem;
+  color: #d9f2ff;
+  background: rgba(14, 165, 233, 0.14);
+}
+.command-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.72rem;
+}
+.command-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.33rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.5);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.74rem;
+  color: #d4e3fa;
+}
+.command-metrics {
+  margin-top: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+.command-metric {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.44);
+  border-radius: 12px;
+  padding: 0.58rem 0.62rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.command-metric span {
+  color: #a7b8d4;
+  font-size: 0.75rem;
+}
+.command-metric strong {
+  color: #f8fbff;
+  font-size: 1.03rem;
+}
+.command-metric-note {
+  color: #9db4d3;
+  font-size: 0.75rem;
+}
+.command-progress {
+  margin-top: 0.24rem;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+.command-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e 0%, #0ea5e9 100%);
+}
+.command-notes {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+.command-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.32rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  background: rgba(15, 23, 42, 0.36);
+  color: #d7e6fb;
+  font-size: 0.84rem;
+}
+.command-note i {
+  color: #38bdf8;
+  line-height: 1;
+  margin-top: 0.12rem;
+}
+.command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.premium-hero {
+  background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.25) 0%, transparent 36%), linear-gradient(130deg, #0f172a 0%, #0f766e 52%, #0ea5e9 100%);
+  border-radius: 20px;
+  color: #ffffff;
+  padding: 1.35rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 165px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.hero-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.82;
+}
+.hero-value {
+  font-size: 2.1rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.hero-meta {
+  opacity: 0.92;
+}
+.hero-kpis {
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.hero-kpi {
+  border-radius: 999px;
+  padding: 0.22rem 0.52rem;
+  font-size: 0.77rem;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.12);
+}
+.hero-kpi.income {
+  color: #86efac;
+}
+.hero-kpi.expense {
+  color: #fecaca;
+}
+.hero-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.pulse-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.pulse-item {
+  border: 1px solid #e6edf8;
+  border-radius: 12px;
+  padding: 0.55rem 0.62rem;
+  background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.pulse-item span {
+  color: #64748b;
+  font-size: 0.76rem;
+}
+.driver-row {
+  padding: 0.45rem 0;
+}
+.driver-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+.driver-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+.driver-value {
+  font-weight: 700;
+  color: #0f172a;
+}
+.driver-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: #e9f0fb;
+  overflow: hidden;
+}
+.driver-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #14b8a6 0%, #0ea5e9 100%);
+}
+.account-tile {
+  border: 1px solid #e9eff8;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+.account-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.currency-chip {
+  border-radius: 999px;
+  border: 1px solid #d7e4f4;
+  background: #f2f7ff;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  color: #475569;
+}
+.account-balance {
+  margin-top: 0.35rem;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.reminder-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #e8eef8;
+  border-radius: 10px;
+  padding: 0.4rem 0.56rem;
+  margin-bottom: 0.42rem;
+  background: #fbfdff;
+  font-size: 0.88rem;
+}
+.chart-frame {
+  position: relative;
+  width: 100%;
+}
+.chart-frame-lg {
+  height: 340px;
+}
+.expense-split-wrap {
+  display: grid;
+  gap: 0.9rem;
+}
+.expense-chart-shell {
+  width: min(100%, 320px);
+  margin: 0 auto;
+  position: relative;
+  height: 320px;
+}
+.expense-chart-shell canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+.expense-chart-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  pointer-events: none;
+}
+.expense-center-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+.expense-center-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.expense-legend {
+  display: grid;
+  gap: 0.45rem;
+}
+.expense-legend-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #eceff3;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.expense-legend-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.74rem;
+}
+.expense-legend-name {
+  color: #0f172a;
+  font-size: 0.91rem;
+}
+.expense-legend-pct {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.expense-legend-amt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+}
+.recent-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eef2f7;
+  padding: 0.82rem 0;
+}
+.recent-row:last-child {
+  border-bottom: 0;
+}
+@media (max-width: 991px) {
+  .premium-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .pulse-grid {
+    grid-template-columns: 1fr;
+  }
+  .chart-frame-lg {
+    height: 260px;
+  }
+  .expense-chart-shell {
+    height: 270px;
+  }
+  .command-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function renderKpiSparkline(canvasId, data, lineColor, fillTopColor) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !Array.isArray(data) || !data.length) return;
+
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 34);
+  gradient.addColorStop(0, fillTopColor);
+  gradient.addColorStop(1, 'rgba(15, 23, 42, 0.02)');
+
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: data.map((_, index) => index + 1),
+      datasets: [{
+        data,
+        borderColor: lineColor,
+        backgroundColor: gradient,
+        fill: true,
+        borderWidth: 1.8,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        tension: 0.36
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+      elements: { line: { capBezierPoints: true } }
+    }
+  });
+}
+
+renderKpiSparkline('kpiSparkBurn', {{ kpi_spark_burn|tojson }}, '#f97316', 'rgba(249, 115, 22, 0.28)');
+renderKpiSparkline('kpiSparkRunway', {{ kpi_spark_runway|tojson }}, '#22c55e', 'rgba(34, 197, 94, 0.24)');
+renderKpiSparkline('kpiSparkAccounts', {{ kpi_spark_accounts|tojson }}, '#38bdf8', 'rgba(56, 189, 248, 0.24)');
+renderKpiSparkline('kpiSparkDriver', {{ kpi_spark_driver|tojson }}, '#a78bfa', 'rgba(167, 139, 250, 0.22)');
+
+const trendCanvas = document.getElementById('trendChart');
+if (trendCanvas) {
+  const trendCtx2d = trendCanvas.getContext('2d');
+  const incomeGradient = trendCtx2d.createLinearGradient(0, 0, 0, 320);
+  incomeGradient.addColorStop(0, 'rgba(34, 197, 94, 0.26)');
+  incomeGradient.addColorStop(1, 'rgba(34, 197, 94, 0.02)');
+
+  const expenseGradient = trendCtx2d.createLinearGradient(0, 0, 0, 320);
+  expenseGradient.addColorStop(0, 'rgba(239, 68, 68, 0.22)');
+  expenseGradient.addColorStop(1, 'rgba(239, 68, 68, 0.02)');
+
+  new Chart(trendCanvas, {
+    type: 'line',
+    data: {
+      labels: {{ chart_labels|tojson }},
+      datasets: [
+        {
+          label: 'Income',
+          data: {{ income_series|tojson }},
+          borderColor: '#22c55e',
+          backgroundColor: incomeGradient,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 2,
+          pointHoverRadius: 4
+        },
+        {
+          label: 'Expense',
+          data: {{ expense_series|tojson }},
+          borderColor: '#ef4444',
+          backgroundColor: expenseGradient,
+          tension: 0.35,
+          fill: true,
+          pointRadius: 2,
+          pointHoverRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top' } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+const pieCtx = document.getElementById('expensePieChart');
+if (pieCtx) {
+  const pieLabels = {{ expense_pie_labels|tojson }};
+  const pieIcons = {{ expense_pie_icons|tojson }};
+  const pieSeries = {{ expense_pie_series|tojson }};
+  const pieColors = {{ expense_pie_colors|tojson }};
+  const pieTotal = pieSeries.reduce((sum, value) => sum + value, 0);
+  const legendContainer = document.getElementById('expenseLegend');
+  const moneyFormat = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2
+  });
+
+  new Chart(pieCtx, {
+    type: 'doughnut',
+    data: {
+      labels: pieLabels,
+      datasets: [{
+        data: pieSeries,
+        backgroundColor: pieColors,
+        borderColor: '#ffffff',
+        borderWidth: 3,
+        spacing: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '70%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const value = context.parsed || 0;
+              const pct = pieTotal > 0 ? ((value / pieTotal) * 100).toFixed(1) : '0.0';
+              return `${context.label}: ${moneyFormat.format(value)} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (legendContainer) {
+    pieLabels.forEach((label, idx) => {
+      const value = pieSeries[idx] || 0;
+      const pct = pieTotal > 0 ? ((value / pieTotal) * 100).toFixed(1) : '0.0';
+
+      const row = document.createElement('div');
+      row.className = 'expense-legend-row';
+
+      const iconBadge = document.createElement('span');
+      iconBadge.className = 'expense-legend-icon';
+      iconBadge.style.backgroundColor = pieColors[idx];
+
+      const icon = document.createElement('i');
+      icon.className = pieIcons[idx] || 'bi bi-tag';
+      iconBadge.appendChild(icon);
+
+      const name = document.createElement('span');
+      name.className = 'expense-legend-name';
+      name.textContent = label;
+
+      const pctCell = document.createElement('span');
+      pctCell.className = 'expense-legend-pct';
+      pctCell.textContent = `${pct}%`;
+
+      const amount = document.createElement('span');
+      amount.className = 'expense-legend-amt';
+      amount.textContent = moneyFormat.format(value);
+
+      row.appendChild(iconBadge);
+      row.appendChild(name);
+      row.appendChild(pctCell);
+      row.appendChild(amount);
+      legendContainer.appendChild(row);
+    });
+  }
+}
+
+(() => {
+  const form = document.getElementById('dashboardDateForm');
+  const periodSelect = document.getElementById('dashboardPeriodSelect');
+  const customFields = document.querySelectorAll('.custom-range-field');
+  const startInput = document.getElementById('dashboardStartDate');
+  const endInput = document.getElementById('dashboardEndDate');
+  if (!form || !periodSelect) return;
+
+  function syncCustomVisibility() {
+    const showCustom = periodSelect.value === 'custom';
+    customFields.forEach((field) => {
+      field.style.display = showCustom ? '' : 'none';
+    });
+    if (showCustom) {
+      if (startInput) startInput.required = true;
+      if (endInput) endInput.required = true;
+    } else {
+      if (startInput) startInput.required = false;
+      if (endInput) endInput.required = false;
+    }
+  }
+
+  periodSelect.addEventListener('change', () => {
+    syncCustomVisibility();
+    if (periodSelect.value !== 'custom') {
+      form.submit();
+    }
+  });
+
+  syncCustomVisibility();
+})();
+</script>
+{% endblock %}

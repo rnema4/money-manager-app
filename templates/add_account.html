@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card-soft bg-white p-4">
+      <h3 class="mb-4">Add Account</h3>
+      <form method="post">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Account name</label>
+            <input type="text" class="form-control" name="name" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Account type</label>
+            <select class="form-select" name="account_type">
+              <option>Cash</option>
+              <option>Bank</option>
+              <option>Credit Card</option>
+              <option>Wallet</option>
+              <option>Investment</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Opening balance</label>
+            <input type="number" step="0.01" class="form-control" name="opening_balance" value="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Currency</label>
+            <input type="text" class="form-control" name="currency" value="INR">
+          </div>
+        </div>
+        <div class="mt-4">
+          <button class="btn btn-success">Create Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

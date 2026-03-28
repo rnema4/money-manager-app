@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card-soft bg-white p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="mb-0">Add Category</h3>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('categories') }}">View Categories</a>
+      </div>
+
+      <form method="post">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Category Name</label>
+            <input type="text" class="form-control" name="name" placeholder="e.g. Insurance" required>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="kind" required>
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+              <option value="transfer">Transfer</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Icon</label>
+            <select class="form-select" id="iconSelect" name="icon">
+              {% for icon_value, icon_label in icon_options %}
+              <option value="{{ icon_value }}">{{ icon_label }} ({{ icon_value }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Color</label>
+            <input type="color" class="form-control form-control-color w-100" id="colorInput" name="color" value="#6c757d">
+          </div>
+
+          <div class="col-12">
+            <div class="category-preview">
+              <span class="preview-icon" id="previewIconWrap">
+                <i id="previewIcon" class="bi bi-tag"></i>
+              </span>
+              <div>
+                <div class="fw-semibold">Preview</div>
+                <div class="text-muted small">How this category badge appears in records.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="isActive" name="is_active" checked>
+              <label class="form-check-label" for="isActive">Active category</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 d-flex gap-2">
+          <button class="btn btn-success">Create Category</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+.category-preview {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fbfcfe;
+}
+.preview-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #6c757d;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const iconSelect = document.getElementById('iconSelect');
+const colorInput = document.getElementById('colorInput');
+const previewIcon = document.getElementById('previewIcon');
+const previewIconWrap = document.getElementById('previewIconWrap');
+
+function updatePreview() {
+  previewIcon.className = iconSelect.value || 'bi bi-tag';
+  previewIconWrap.style.backgroundColor = colorInput.value || '#6c757d';
+}
+
+iconSelect.addEventListener('change', updatePreview);
+colorInput.addEventListener('input', updatePreview);
+updatePreview();
+</script>
+{% endblock %}

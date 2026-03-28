@@ -1,0 +1,200 @@
+:root {
+  --app-bg-a: #f2f7ff;
+  --app-bg-b: #eef7f2;
+  --app-bg-c: #f8fafc;
+  --brand-green: #0f7a53;
+  --brand-green-strong: #0a5e3f;
+  --text-deep: #0f172a;
+  --card-shadow: 0 12px 24px rgba(15, 23, 42, 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  background: radial-gradient(circle at top left, var(--app-bg-a) 0%, var(--app-bg-b) 40%, var(--app-bg-c) 100%);
+  font-family: "Manrope", "Trebuchet MS", sans-serif;
+  color: var(--text-deep);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.navbar {
+  backdrop-filter: blur(8px);
+}
+
+.navbar-brand {
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.nav-link {
+  font-weight: 600;
+}
+
+.top-card {
+  border-radius: 14px;
+  color: #fff;
+  min-height: 88px;
+}
+
+.top-card .label {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.card-soft {
+  border: 0;
+  border-radius: 18px;
+  box-shadow: var(--card-shadow);
+}
+
+.metric-number {
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.record-amount.expense {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.record-amount.income {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.badge-soft {
+  background: #e8f1ff;
+  color: #2563eb;
+}
+
+.sidebar-box {
+  background: #fff;
+  border-radius: 18px;
+  padding: 1rem;
+  box-shadow: var(--card-shadow);
+}
+
+.table thead th {
+  border-bottom: 0;
+}
+
+.app-content {
+  padding-bottom: 5.5rem;
+}
+
+.table-responsive {
+  border-radius: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pwa-install-btn {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 1045;
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  box-shadow: 0 8px 20px rgba(10, 94, 63, 0.3);
+  background: linear-gradient(135deg, var(--brand-green) 0%, var(--brand-green-strong) 100%);
+  border-color: transparent;
+}
+
+.pwa-install-btn[hidden] {
+  display: none !important;
+}
+
+.ios-install-hint {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(4.4rem + env(safe-area-inset-bottom));
+  z-index: 1044;
+  width: min(92vw, 540px);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+  padding: 0.65rem 0.75rem;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.ios-install-hint[hidden] {
+  display: none !important;
+}
+
+.card-soft,
+.sidebar-box,
+.top-card {
+  animation: card-rise 260ms ease-out;
+}
+
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 991.98px) {
+  .navbar .btn {
+    min-height: 42px;
+  }
+
+  .nav-action-group,
+  .auth-cta-group {
+    width: 100%;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+  }
+
+  .nav-action-group .btn,
+  .auth-cta-group .btn {
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+
+  .metric-number {
+    font-size: clamp(1.45rem, 6vw, 2rem);
+  }
+}
+
+@media (max-width: 575.98px) {
+  .top-card {
+    min-height: 76px;
+  }
+
+  .card-soft,
+  .sidebar-box {
+    border-radius: 14px;
+  }
+
+  .table {
+    font-size: 0.9rem;
+  }
+
+  .ios-install-hint {
+    bottom: calc(4.8rem + env(safe-area-inset-bottom));
+    font-size: 0.82rem;
+    line-height: 1.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

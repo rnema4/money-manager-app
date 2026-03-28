@@ -1,0 +1,17 @@
+[Unit]
+Description=Money Manager (Gunicorn)
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=www-data
+WorkingDirectory=/opt/money_manager_app/money_manager_app
+EnvironmentFile=/opt/money_manager_app/money_manager_app/.env.production
+ExecStart=/opt/money_manager_app/money_manager_app/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 --timeout 120 wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

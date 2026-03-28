@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-7 col-lg-5">
+    <div class="card-soft bg-white p-4">
+      <h3 class="mb-3">Create Account</h3>
+      <p class="text-muted small mb-4">Start managing records with your own login.</p>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Full name</label>
+          <input type="text" class="form-control" name="name" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-control" name="email" required>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-control" name="password" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Confirm password</label>
+            <input type="password" class="form-control" name="confirm_password" required>
+          </div>
+        </div>
+        <div class="d-grid gap-2 mt-4">
+          <button class="btn btn-success">Sign up</button>
+          <a href="{{ url_for('login') }}" class="btn btn-outline-secondary">Already have an account</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

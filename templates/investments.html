@@ -1,0 +1,389 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h3 class="mb-1">Investment Tracker</h3>
+    <div class="text-muted small">Mutual funds and stocks sync with allocation and returns dashboard.</div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-xl-3">
+    <div class="card-soft bg-white p-3 h-100">
+      <div class="text-muted small">Portfolio Value</div>
+      <div class="h4 mb-0 mt-1">{{ snapshot.total_value|currency }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card-soft bg-white p-3 h-100">
+      <div class="text-muted small">Invested Cost</div>
+      <div class="h4 mb-0 mt-1">{{ snapshot.total_cost|currency }}</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card-soft bg-white p-3 h-100">
+      <div class="text-muted small">Unrealized P/L</div>
+      <div class="h4 mb-0 mt-1 {% if snapshot.total_unrealized < 0 %}text-danger{% else %}text-success{% endif %}">
+        {{ snapshot.total_unrealized|currency }}
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card-soft bg-white p-3 h-100">
+      <div class="text-muted small">Realized P/L</div>
+      <div class="h4 mb-0 mt-1 {% if snapshot.total_realized < 0 %}text-danger{% else %}text-success{% endif %}">
+        {{ snapshot.total_realized|currency }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-xl-8">
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="card-soft bg-white p-4 h-100">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Allocation by Asset</h5>
+          </div>
+          <canvas id="allocationByAsset" height="210"></canvas>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card-soft bg-white p-4 h-100">
+          <h5 class="mb-3">Allocation by Class</h5>
+          <canvas id="allocationByClass" height="210"></canvas>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card-soft bg-white p-4">
+          <h5 class="mb-3">Unrealized Returns by Asset</h5>
+          <canvas id="returnsByAsset" height="120"></canvas>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card-soft bg-white p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Holdings</h5>
+            <span class="text-muted small">{{ snapshot.holdings|length }} tracked</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table align-middle">
+              <thead>
+                <tr>
+                  <th>Asset</th>
+                  <th>Class</th>
+                  <th class="text-end">Qty</th>
+                  <th class="text-end">Cost</th>
+                  <th class="text-end">Value</th>
+                  <th class="text-end">P/L</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for holding in snapshot.holdings %}
+                <tr>
+                  <td>
+                    <div class="fw-semibold">{{ holding.asset.symbol }}</div>
+                    <div class="text-muted small">{{ holding.asset.name }}</div>
+                  </td>
+                  <td>
+                    <span class="badge rounded-pill text-bg-light border">{{ holding.asset.asset_class.replace('_', ' ')|title }}</span>
+                  </td>
+                  <td class="text-end">{{ '%.4f'|format(holding.quantity|float) }}</td>
+                  <td class="text-end">{{ holding.cost_open|currency }}</td>
+                  <td class="text-end">{{ holding.market_value|currency }}</td>
+                  <td class="text-end">
+                    <div class="{% if holding.unrealized < 0 %}text-danger{% else %}text-success{% endif %}">
+                      {{ holding.unrealized|currency }}
+                    </div>
+                    <div class="small text-muted">{{ '%.2f'|format(holding.return_pct) }}%</div>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No holdings yet. Add a transaction to start tracking.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-12">
+        <div class="card-soft bg-white p-4">
+          <h5 class="mb-3">Recent Investment Transactions</h5>
+          <div class="table-responsive">
+            <table class="table align-middle">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Asset</th>
+                  <th>Type</th>
+                  <th class="text-end">Quantity</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-end">Fees</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for tx in recent_transactions %}
+                <tr>
+                  <td>{{ tx.tx_date.strftime('%d-%m-%Y') }}</td>
+                  <td>{{ tx.asset.symbol }} <span class="text-muted small">{{ tx.asset.name }}</span></td>
+                  <td><span class="badge rounded-pill text-bg-light border">{{ tx.tx_kind|title }}</span></td>
+                  <td class="text-end">{{ '%.4f'|format(tx.quantity|float) }}</td>
+                  <td class="text-end">{{ tx.unit_price|currency }}</td>
+                  <td class="text-end">{{ tx.fees|currency }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">No investment transactions yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-4">
+    <div class="card-soft bg-white p-4 mb-3">
+      <h5 class="mb-3">Add / Update Asset</h5>
+      <form method="post" action="{{ url_for('add_investment_asset') }}" class="row g-2">
+        <div class="col-5">
+          <label class="form-label">Symbol</label>
+          <input type="text" class="form-control" name="symbol" placeholder="RELIANCE" required>
+        </div>
+        <div class="col-7">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-control" name="name" placeholder="Reliance Industries" required>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Class</label>
+          <select class="form-select" name="asset_class">
+            {% for cls in asset_class_choices %}
+            <option value="{{ cls }}">{{ cls.replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-3">
+          <label class="form-label">Curr.</label>
+          <input type="text" class="form-control" name="currency" value="INR" maxlength="10">
+        </div>
+        <div class="col-3">
+          <label class="form-label">Price</label>
+          <input type="number" step="0.0001" class="form-control" name="last_price" value="0">
+        </div>
+        <div class="col-12">
+          <button class="btn btn-success w-100">Save Asset</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card-soft bg-white p-4 mb-3">
+      <h5 class="mb-3">Add Transaction</h5>
+      <form method="post" action="{{ url_for('add_investment_transaction') }}" class="row g-2">
+        <div class="col-12">
+          <label class="form-label">Asset</label>
+          <select class="form-select" name="asset_id" required>
+            <option value="">Select asset</option>
+            {% for asset in assets %}
+            <option value="{{ asset.id }}" {% if focus_asset and focus_asset == asset.symbol %}selected{% endif %}>{{ asset.symbol }} - {{ asset.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Date</label>
+          <input type="date" class="form-control" name="tx_date" value="{{ today_iso }}" required>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Type</label>
+          <select class="form-select" name="tx_kind">
+            {% for kind in kind_choices %}
+            <option value="{{ kind }}">{{ kind|title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-4">
+          <label class="form-label">Qty</label>
+          <input type="number" step="0.0001" class="form-control" name="quantity" value="0" required>
+        </div>
+        <div class="col-4">
+          <label class="form-label">Price</label>
+          <input type="number" step="0.0001" class="form-control" name="unit_price" value="0" required>
+        </div>
+        <div class="col-4">
+          <label class="form-label">Fees</label>
+          <input type="number" step="0.01" class="form-control" name="fees" value="0">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notes</label>
+          <input type="text" class="form-control" name="notes" placeholder="Broker, platform, memo">
+        </div>
+        <div class="col-12">
+          <button class="btn btn-outline-success w-100">Add Transaction</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card-soft bg-white p-4 mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Tracked Assets</h5>
+        <span class="text-muted small">{{ assets|length }} total</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Class</th>
+              <th class="text-end">Last Price</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in assets %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ asset.symbol }}</div>
+                <div class="text-muted small">{{ asset.name }}</div>
+              </td>
+              <td>
+                <span class="badge rounded-pill {% if asset.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                  {{ asset.asset_class.replace('_', ' ')|title }}
+                </span>
+              </td>
+              <td class="text-end">
+                {{ asset.last_price|currency }}
+                {% if asset.last_price_at %}
+                <div class="text-muted small">{{ asset.last_price_at.strftime('%d-%m-%Y') }}</div>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <form method="post" action="{{ url_for('toggle_investment_asset', asset_id=asset.id) }}">
+                  {% if asset.is_active %}
+                  <button class="btn btn-sm btn-outline-warning">Pause</button>
+                  {% else %}
+                  <button class="btn btn-sm btn-outline-success">Resume</button>
+                  {% endif %}
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No assets saved yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card-soft bg-white p-4 mb-3">
+      <h5 class="mb-3">Sync Transactions File</h5>
+      <form method="post" action="{{ url_for('sync_investment_transactions') }}" enctype="multipart/form-data" class="row g-2">
+        <div class="col-12">
+          <input type="file" class="form-control" name="transaction_file" accept=".csv,.xls,.xlsx" required>
+        </div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="symbol_col" value="Symbol" placeholder="Symbol col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="date_col" value="Date" placeholder="Date col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="type_col" value="Type" placeholder="Type col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="qty_col" value="Quantity" placeholder="Qty col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="price_col" value="Price" placeholder="Price col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="fees_col" value="Fees" placeholder="Fees col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="name_col" value="Name" placeholder="Name col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="class_col" value="Class" placeholder="Class col"></div>
+        <div class="col-12"><input type="text" class="form-control form-control-sm" name="currency_col" value="Currency" placeholder="Currency col"></div>
+        <div class="col-12">
+          <button class="btn btn-outline-primary w-100">Sync Transactions</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card-soft bg-white p-4">
+      <h5 class="mb-3">Sync Price File</h5>
+      <form method="post" action="{{ url_for('sync_investment_prices') }}" enctype="multipart/form-data" class="row g-2">
+        <div class="col-12">
+          <input type="file" class="form-control" name="price_file" accept=".csv,.xls,.xlsx" required>
+        </div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="symbol_col" value="Symbol" placeholder="Symbol col"></div>
+        <div class="col-6"><input type="text" class="form-control form-control-sm" name="price_col" value="Last Price" placeholder="Price col"></div>
+        <div class="col-12"><input type="text" class="form-control form-control-sm" name="date_col" value="Date" placeholder="Date col"></div>
+        <div class="col-12">
+          <button class="btn btn-outline-dark w-100">Sync Prices</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const palette = ['#0ea5e9', '#22c55e', '#f97316', '#a855f7', '#ef4444', '#facc15', '#14b8a6', '#3b82f6'];
+
+  function chartHasData(values) {
+    return Array.isArray(values) && values.some((v) => Number(v) > 0);
+  }
+
+  const allocationValues = {{ snapshot.allocation_values|tojson }};
+  const allocationLabels = {{ snapshot.allocation_labels|tojson }};
+  const classValues = {{ snapshot.class_values|tojson }};
+  const classLabels = {{ snapshot.class_labels|tojson }};
+  const returnsValues = {{ snapshot.returns_values|tojson }};
+  const returnsLabels = {{ snapshot.returns_labels|tojson }};
+
+  const allocationCtx = document.getElementById('allocationByAsset');
+  if (allocationCtx && chartHasData(allocationValues)) {
+    new Chart(allocationCtx, {
+      type: 'doughnut',
+      data: {
+        labels: allocationLabels,
+        datasets: [{ data: allocationValues, backgroundColor: palette, borderWidth: 1 }]
+      },
+      options: { plugins: { legend: { position: 'bottom' } }, cutout: '62%' }
+    });
+  } else if (allocationCtx) {
+    allocationCtx.replaceWith(Object.assign(document.createElement('div'), {
+      className: 'text-muted small',
+      textContent: 'No allocation data yet.'
+    }));
+  }
+
+  const classCtx = document.getElementById('allocationByClass');
+  if (classCtx && chartHasData(classValues)) {
+    new Chart(classCtx, {
+      type: 'pie',
+      data: {
+        labels: classLabels,
+        datasets: [{ data: classValues, backgroundColor: palette, borderWidth: 1 }]
+      },
+      options: { plugins: { legend: { position: 'bottom' } } }
+    });
+  } else if (classCtx) {
+    classCtx.replaceWith(Object.assign(document.createElement('div'), {
+      className: 'text-muted small',
+      textContent: 'No class allocation data yet.'
+    }));
+  }
+
+  const returnsCtx = document.getElementById('returnsByAsset');
+  if (returnsCtx && returnsLabels.length) {
+    const barColors = returnsValues.map((value) => Number(value) >= 0 ? '#22c55e' : '#ef4444');
+    new Chart(returnsCtx, {
+      type: 'bar',
+      data: {
+        labels: returnsLabels,
+        datasets: [{ label: 'Unrealized P/L', data: returnsValues, backgroundColor: barColors }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  } else if (returnsCtx) {
+    returnsCtx.replaceWith(Object.assign(document.createElement('div'), {
+      className: 'text-muted small',
+      textContent: 'No return data yet.'
+    }));
+  }
+})();
+</script>
+{% endblock %}

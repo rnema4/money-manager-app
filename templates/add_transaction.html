@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card-soft bg-white p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="mb-0">Add Daily Entry</h3>
+        <a class="btn btn-outline-success btn-sm" href="{{ url_for('add_category') }}">+ New Category</a>
+      </div>
+
+      <form method="post">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Date & Time</label>
+            <input type="text" class="form-control tx-date-picker" name="tx_date" value="{{ default_tx_date }}" required autocomplete="off">
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="tx_type" id="tx_type" required>
+              <option value="expense">Expense</option>
+              <option value="income">Income</option>
+              <option value="transfer">Transfer</option>
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Description</label>
+            <input type="text" class="form-control" name="description" required>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Amount</label>
+            <input type="number" step="0.01" class="form-control" name="amount" required>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Account</label>
+            <select class="form-select" name="account_id" required>
+              {% for account in accounts %}
+              <option value="{{ account.id }}">{{ account.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label d-block">Category</label>
+
+            <div id="emptyState" class="alert alert-warning py-2 d-none">
+              No category found. Click <strong>+ New Category</strong>.
+            </div>
+
+            <input type="hidden" name="category_id" id="category_id">
+
+            <div class="category-dropdown" id="categoryDropdown">
+              <button type="button" class="form-select category-trigger text-start" id="categoryTrigger" aria-haspopup="listbox" aria-expanded="false">
+                <span class="category-trigger-content">
+                  <span class="category-badge" id="categoryTriggerBadge" style="background:#6c757d;">
+                    <i id="categoryTriggerIcon" class="bi bi-grid"></i>
+                  </span>
+                  <span id="categoryTriggerName">Choose</span>
+                </span>
+              </button>
+
+              <div class="category-menu d-none" id="categoryMenu" role="listbox">
+                <div class="category-menu-title">Categories</div>
+              {% for category in categories %}
+                <button
+                  type="button"
+                  class="category-item"
+                  role="option"
+                  data-id="{{ category.id }}"
+                  data-name="{{ category.name }}"
+                  data-icon="{{ category.icon or 'bi bi-tag' }}"
+                  data-color="{{ category.color or '#6c757d' }}"
+                >
+                  <span class="category-badge" style="background: {{ category.color or '#6c757d' }};">
+                    <i class="{{ category.icon or 'bi bi-tag' }}"></i>
+                  </span>
+                  <span class="category-item-name">{{ category.name }}</span>
+                </button>
+              {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Payee</label>
+            <input type="text" class="form-control" name="payee">
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Reference No</label>
+            <input type="text" class="form-control" name="reference_no">
+          </div>
+
+          <div class="col-12">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" name="notes" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="mt-4 d-flex gap-2">
+          <button class="btn btn-success">Save Entry</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('records') }}">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+  .category-dropdown {
+    position: relative;
+  }
+
+  .category-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    cursor: pointer;
+  }
+
+  .category-trigger::after {
+    margin-left: 8px;
+  }
+
+  .category-trigger-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: #f8f9fa;
+  }
+
+  .category-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    background: #10151c;
+    border: 1px solid #2b3543;
+    border-radius: 10px;
+    padding: 8px;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  }
+
+  .category-menu-title {
+    font-size: 0.8rem;
+    color: #9aa9bb;
+    padding: 4px 6px 8px;
+  }
+
+  .category-item {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    text-align: left;
+  }
+
+  .category-item:hover,
+  .category-item.active {
+    background: rgba(25, 135, 84, 0.16);
+  }
+
+  .category-item-name {
+    font-weight: 500;
+    flex: 1;
+  }
+
+  .category-badge {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 22px;
+    font-size: 0.68rem;
+  }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/material_green.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+  flatpickr('.tx-date-picker', {
+    enableTime: true,
+    dateFormat: 'Y-m-d\\TH:i',
+    altInput: true,
+    altFormat: 'd M Y, h:i K',
+    time_24hr: false,
+    allowInput: false,
+    disableMobile: true,
+  });
+
+  const categoryInput = document.getElementById('category_id');
+  const categoryDropdown = document.getElementById('categoryDropdown');
+  const categoryTrigger = document.getElementById('categoryTrigger');
+  const categoryMenu = document.getElementById('categoryMenu');
+  const categoryItems = Array.from(document.querySelectorAll('.category-item'));
+  const emptyState = document.getElementById('emptyState');
+  const categoryTriggerName = document.getElementById('categoryTriggerName');
+  const categoryTriggerBadge = document.getElementById('categoryTriggerBadge');
+  const categoryTriggerIcon = document.getElementById('categoryTriggerIcon');
+
+  function setSelection(item) {
+    if (!item) {
+      categoryInput.value = '';
+      categoryTriggerName.textContent = 'Choose';
+      categoryTriggerIcon.className = 'bi bi-grid';
+      categoryTriggerBadge.style.backgroundColor = '#6c757d';
+      categoryItems.forEach((el) => el.classList.remove('active'));
+      return;
+    }
+
+    categoryInput.value = item.dataset.id;
+    categoryTriggerName.textContent = item.dataset.name || 'Choose';
+    categoryTriggerIcon.className = item.dataset.icon || 'bi bi-tag';
+    categoryTriggerBadge.style.backgroundColor = item.dataset.color || '#6c757d';
+    categoryItems.forEach((el) => el.classList.toggle('active', el === item));
+  }
+
+  function toggleMenu(show) {
+    categoryMenu.classList.toggle('d-none', !show);
+    categoryTrigger.setAttribute('aria-expanded', show ? 'true' : 'false');
+  }
+
+  function initCategoryItems() {
+    const hasVisibleOptions = categoryItems.length > 0;
+    emptyState.classList.toggle('d-none', hasVisibleOptions);
+    categoryTrigger.disabled = !hasVisibleOptions;
+    if (!hasVisibleOptions) {
+      setSelection(null);
+      toggleMenu(false);
+      return;
+    }
+
+    const selected = categoryItems.find((item) => item.dataset.id === categoryInput.value) || categoryItems[0];
+    setSelection(selected);
+    toggleMenu(false);
+  }
+
+  categoryTrigger.addEventListener('click', () => {
+    if (categoryTrigger.disabled) return;
+    const isOpen = !categoryMenu.classList.contains('d-none');
+    toggleMenu(!isOpen);
+  });
+
+  categoryItems.forEach((item) => {
+    item.addEventListener('click', () => {
+      setSelection(item);
+      toggleMenu(false);
+    });
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!categoryDropdown.contains(event.target)) {
+      toggleMenu(false);
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') toggleMenu(false);
+  });
+
+  initCategoryItems();
+</script>
+{% endblock %}

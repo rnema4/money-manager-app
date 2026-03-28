@@ -1,0 +1,17 @@
+[Unit]
+Description=Money Manager Public Tunnel (cloudflared)
+After=network-online.target money-manager.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/money_manager_app/money_manager_app
+EnvironmentFile=/opt/money_manager_app/money_manager_app/.env.tunnel
+ExecStart=/bin/sh -c '/usr/local/bin/cloudflared tunnel --no-autoupdate run --token "$CLOUDFLARE_TUNNEL_TOKEN"'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

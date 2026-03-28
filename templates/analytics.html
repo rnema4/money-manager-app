@@ -1,0 +1,481 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="analytics-shell">
+  <div class="analytics-hero card-soft p-4 mb-4">
+    <div>
+      <h3 class="mb-1">Advanced Analytics</h3>
+      <div class="text-muted small">Modern insights across trends, forecasts, category mix, and behavior patterns.</div>
+    </div>
+    <div class="analytics-pill-row">
+      <div class="analytics-pill">
+        <span>Avg Monthly Net</span>
+        <strong>{{ avg_monthly_net|currency }}</strong>
+      </div>
+      <div class="analytics-pill">
+        <span>Leak Alerts</span>
+        <strong>{{ leak_insights|length }}</strong>
+      </div>
+      <div class="analytics-pill">
+        <span>Anomaly Spikes</span>
+        <strong>{{ anomaly_items|length }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-xl-8">
+      <div class="card-soft chart-card p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Cashflow Momentum</h5>
+          <span class="badge text-bg-light border">Income vs Expense vs Net</span>
+        </div>
+        <div class="chart-frame chart-frame-lg">
+          <canvas id="trendAdvanced"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="card-soft chart-card p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Forecast Scenario</h5>
+          <span class="badge text-bg-light border">6 months</span>
+        </div>
+        <div class="chart-frame chart-frame-md">
+          <canvas id="forecastChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card-soft chart-card p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Category Mix ({{ month_key }})</h5>
+          <span class="badge text-bg-light border">Top spend drivers</span>
+        </div>
+        <div class="chart-frame chart-frame-md">
+          <canvas id="categoryMixChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card-soft chart-card p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Weekly Spend Rhythm</h5>
+          <span class="badge text-bg-light border">Last 180 days</span>
+        </div>
+        <div class="chart-frame chart-frame-md">
+          <canvas id="weekdayRadarChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card-soft chart-card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0">Savings Rate Trend</h5>
+          <span class="badge text-bg-light border">Month-wise efficiency</span>
+        </div>
+        <div class="chart-frame chart-frame-sm">
+          <canvas id="savingsRateChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mt-1">
+    <div class="col-lg-4">
+      <div class="card-soft bg-white p-4 h-100">
+        <h5 class="mb-3">Category Budgets ({{ month_key }})</h5>
+        <form method="post" action="{{ url_for('create_budget') }}" class="mb-3">
+          <input type="hidden" name="month_key" value="{{ month_key }}">
+          <div class="mb-2">
+            <label class="form-label">Category</label>
+            <select class="form-select" name="category_id" required>
+              {% for category in categories %}
+              <option value="{{ category.id }}">{{ category.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Budget Limit</label>
+            <input type="number" step="0.01" class="form-control" name="amount_limit" required>
+          </div>
+          <button class="btn btn-success btn-sm">Save Budget</button>
+        </form>
+
+        {% for row in budget_progress %}
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">{{ row.budget.category.name }}</span>
+            <small class="{% if row.overspend %}text-danger{% else %}text-muted{% endif %}">
+              {{ row.spent|currency }} / {{ row.budget.amount_limit|currency }}
+            </small>
+          </div>
+          <div class="progress mt-1" style="height: 8px;">
+            <div class="progress-bar {% if row.overspend %}bg-danger{% else %}bg-success{% endif %}" style="width: {{ 100 if row.percent > 100 else row.percent }}%;"></div>
+          </div>
+          {% if row.overspend %}
+          <div class="small text-danger mt-1">Overspent by {{ (row.spent - row.budget.amount_limit)|currency }}</div>
+          {% endif %}
+          <form method="post" action="{{ url_for('delete_budget', budget_id=row.budget.id) }}" class="mt-1">
+            <button class="btn btn-link btn-sm p-0 text-danger">Delete</button>
+          </form>
+        </div>
+        {% else %}
+        <div class="text-muted small">No budgets yet for this month.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-soft bg-white p-4 h-100">
+        <h5 class="mb-3">Savings Goals</h5>
+        <form method="post" action="{{ url_for('create_goal') }}" class="mb-3">
+          <div class="mb-2">
+            <label class="form-label">Goal Name</label>
+            <input type="text" class="form-control" name="name" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Target Amount</label>
+            <input type="number" step="0.01" class="form-control" name="target_amount" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Current Saved</label>
+            <input type="number" step="0.01" class="form-control" name="current_saved" value="0">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Target Date (optional)</label>
+            <input type="date" class="form-control" name="target_date">
+          </div>
+          <button class="btn btn-success btn-sm">Add Goal</button>
+        </form>
+
+        {% for item in goals %}
+        <div class="goal-ring-row mb-3">
+          <div class="goal-ring" style="--p: {{ item.percent }};">
+            <span>{{ '%.0f'|format(item.percent) }}%</span>
+          </div>
+          <div class="flex-grow-1">
+            <div class="fw-semibold">{{ item.goal.name }}</div>
+            <div class="small text-muted">{{ item.goal.current_saved|currency }} / {{ item.goal.target_amount|currency }}</div>
+            <div class="d-flex gap-2 mt-1">
+              <form method="post" action="{{ url_for('contribute_goal', goal_id=item.goal.id) }}" class="d-flex gap-1">
+                <input type="number" step="0.01" class="form-control form-control-sm" name="amount" placeholder="+ amount" style="width: 95px;" required>
+                <button class="btn btn-sm btn-outline-success">Add</button>
+              </form>
+              <form method="post" action="{{ url_for('toggle_goal', goal_id=item.goal.id) }}">
+                <button class="btn btn-sm {% if item.goal.is_completed %}btn-outline-secondary{% else %}btn-outline-primary{% endif %}">
+                  {% if item.goal.is_completed %}Mark Active{% else %}Mark Done{% endif %}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-muted small">No savings goals yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-soft bg-white p-4 h-100">
+        <h5 class="mb-3">Leak Insights</h5>
+        {% for item in leak_insights %}
+        <div class="insight-row">
+          <div>
+            <div class="fw-semibold">{{ item.category }}</div>
+            <div class="small text-muted">{{ item.previous|currency }} -> {{ item.current|currency }}</div>
+          </div>
+          <span class="text-danger fw-semibold">+{{ item.delta|currency }}</span>
+        </div>
+        {% else %}
+        <div class="text-muted small">No leak insight detected for this month.</div>
+        {% endfor %}
+
+        <hr>
+        <h6 class="mb-2">Overspend Alerts</h6>
+        {% for row in overspend_alerts %}
+        <div class="small text-danger mb-1">{{ row.budget.category.name }} over by {{ (row.spent - row.budget.amount_limit)|currency }}</div>
+        {% else %}
+        <div class="text-muted small">No overspend alerts.</div>
+        {% endfor %}
+
+        <hr>
+        <h6 class="mb-2">Anomaly Detection</h6>
+        {% for item in anomaly_items %}
+        <div class="small mb-1">{{ item.day }}: {{ item.total|round(2) }} (threshold {{ item.threshold|round(2) }})</div>
+        {% else %}
+        <div class="text-muted small">No unusual spikes detected.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.analytics-shell {
+  --ink: #0f172a;
+  --soft-border: #e8edf5;
+  --muted: #64748b;
+}
+.analytics-hero {
+  background: linear-gradient(140deg, rgba(8, 47, 73, 0.92) 0%, rgba(21, 94, 117, 0.9) 42%, rgba(12, 148, 136, 0.86) 100%);
+  color: #f8fafc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.analytics-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.analytics-pill {
+  min-width: 140px;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.analytics-pill span {
+  font-size: 0.72rem;
+  opacity: 0.9;
+  display: block;
+}
+.analytics-pill strong {
+  font-size: 0.98rem;
+}
+.chart-card {
+  border: 1px solid var(--soft-border);
+}
+.chart-frame {
+  position: relative;
+  width: 100%;
+}
+.chart-frame-lg {
+  height: 320px;
+}
+.chart-frame-md {
+  height: 280px;
+}
+.chart-frame-sm {
+  height: 220px;
+}
+.goal-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+.goal-ring {
+  --size: 62px;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #0f172a;
+  background: radial-gradient(closest-side, #fff 72%, transparent 73% 100%), conic-gradient(#0ea5e9 calc(var(--p) * 1%), #e2e8f0 0);
+}
+.insight-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid #eef2f7;
+}
+.insight-row:last-child {
+  border-bottom: 0;
+}
+@media (max-width: 991px) {
+  .analytics-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .chart-frame-lg,
+  .chart-frame-md {
+    height: 250px;
+  }
+  .chart-frame-sm {
+    height: 200px;
+  }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const trendLabels = {{ trend_labels|tojson }};
+  const incomeSeries = {{ income_series|tojson }};
+  const expenseSeries = {{ expense_series|tojson }};
+  const netSeries = {{ net_series|tojson }};
+  const forecastLabels = {{ forecast_labels|tojson }};
+  const forecastSeries = {{ forecast_balance_series|tojson }};
+  const forecastUpperSeries = {{ forecast_upper_series|tojson }};
+  const forecastLowerSeries = {{ forecast_lower_series|tojson }};
+  const categoryMixLabels = {{ category_mix_labels|tojson }};
+  const categoryMixValues = {{ category_mix_values|tojson }};
+  const categoryMixColors = {{ category_mix_colors|tojson }};
+  const weekdayLabels = {{ weekday_labels|tojson }};
+  const weekdaySpendValues = {{ weekday_spend_values|tojson }};
+  const savingsRateSeries = {{ savings_rate_series|tojson }};
+
+  function hasData(values) {
+    return Array.isArray(values) && values.length > 0 && values.some((item) => Number(item) !== 0);
+  }
+
+  function replaceWithEmpty(canvasId, text) {
+    const node = document.getElementById(canvasId);
+    if (!node) return;
+    const message = document.createElement('div');
+    message.className = 'text-muted small';
+    message.textContent = text;
+    node.replaceWith(message);
+  }
+
+  function gradientFor(ctx, colorStart, colorEnd) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, 220);
+    gradient.addColorStop(0, colorStart);
+    gradient.addColorStop(1, colorEnd);
+    return gradient;
+  }
+
+  const trendCtx = document.getElementById('trendAdvanced');
+  if (trendCtx && trendLabels.length) {
+    const ctx = trendCtx.getContext('2d');
+    const incomeFill = gradientFor(ctx, 'rgba(34,197,94,0.30)', 'rgba(34,197,94,0.02)');
+    const expenseFill = gradientFor(ctx, 'rgba(239,68,68,0.24)', 'rgba(239,68,68,0.02)');
+    new Chart(trendCtx, {
+      type: 'line',
+      data: {
+        labels: trendLabels,
+        datasets: [
+          { label: 'Income', data: incomeSeries, borderColor: '#16a34a', backgroundColor: incomeFill, fill: true, tension: 0.35, pointRadius: 2 },
+          { label: 'Expense', data: expenseSeries, borderColor: '#ef4444', backgroundColor: expenseFill, fill: true, tension: 0.35, pointRadius: 2 },
+          { label: 'Net', data: netSeries, borderColor: '#0284c7', borderDash: [6, 4], fill: false, tension: 0.2, pointRadius: 2 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  } else {
+    replaceWithEmpty('trendAdvanced', 'No trend data yet.');
+  }
+
+  const forecastCtx = document.getElementById('forecastChart');
+  if (forecastCtx && forecastLabels.length) {
+    new Chart(forecastCtx, {
+      type: 'line',
+      data: {
+        labels: forecastLabels,
+        datasets: [
+          { label: 'Upper range', data: forecastUpperSeries, borderColor: 'rgba(14,165,233,0.0)', backgroundColor: 'rgba(14,165,233,0.14)', pointRadius: 0, fill: false },
+          { label: 'Lower range', data: forecastLowerSeries, borderColor: 'rgba(14,165,233,0.0)', backgroundColor: 'rgba(14,165,233,0.14)', pointRadius: 0, fill: '-1' },
+          { label: 'Forecast balance', data: forecastSeries, borderColor: '#0284c7', backgroundColor: 'rgba(2,132,199,0.22)', fill: false, tension: 0.32, pointRadius: 2 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  } else {
+    replaceWithEmpty('forecastChart', 'No forecast data yet.');
+  }
+
+  const categoryCtx = document.getElementById('categoryMixChart');
+  if (categoryCtx && hasData(categoryMixValues)) {
+    new Chart(categoryCtx, {
+      type: 'bar',
+      data: {
+        labels: categoryMixLabels,
+        datasets: [
+          { label: 'Spend', data: categoryMixValues, backgroundColor: categoryMixColors, borderRadius: 8, borderSkipped: false }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } }
+      }
+    });
+  } else {
+    replaceWithEmpty('categoryMixChart', 'No category mix data yet.');
+  }
+
+  const weekdayCtx = document.getElementById('weekdayRadarChart');
+  if (weekdayCtx && hasData(weekdaySpendValues)) {
+    new Chart(weekdayCtx, {
+      type: 'radar',
+      data: {
+        labels: weekdayLabels,
+        datasets: [
+          {
+            label: 'Expense Intensity',
+            data: weekdaySpendValues,
+            borderColor: '#0d9488',
+            backgroundColor: 'rgba(13,148,136,0.22)',
+            pointBackgroundColor: '#0f766e',
+            pointRadius: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { r: { beginAtZero: true, angleLines: { color: 'rgba(148,163,184,0.25)' }, grid: { color: 'rgba(148,163,184,0.25)' } } }
+      }
+    });
+  } else {
+    replaceWithEmpty('weekdayRadarChart', 'No weekday behavior data yet.');
+  }
+
+  const savingsCtx = document.getElementById('savingsRateChart');
+  if (savingsCtx && trendLabels.length) {
+    new Chart(savingsCtx, {
+      type: 'bar',
+      data: {
+        labels: trendLabels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Savings Rate (%)',
+            data: savingsRateSeries,
+            backgroundColor: savingsRateSeries.map((val) => Number(val) >= 0 ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)'),
+            borderRadius: 8,
+            borderSkipped: false
+          },
+          {
+            type: 'line',
+            label: 'Rate Trend',
+            data: savingsRateSeries,
+            borderColor: '#0f172a',
+            pointRadius: 2,
+            fill: false,
+            tension: 0.25
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: { y: { ticks: { callback: (v) => `${v}%` } } }
+      }
+    });
+  } else {
+    replaceWithEmpty('savingsRateChart', 'No savings trend data yet.');
+  }
+})();
+</script>
+{% endblock %}
