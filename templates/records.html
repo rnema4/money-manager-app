@@ -121,11 +121,6 @@
                   </a>
                 </li>
                 <li>
-                  <a class="dropdown-item" href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, format='csv') }}">
-                    CSV (.csv)
-                  </a>
-                </li>
-                <li>
                   <a class="dropdown-item" href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, format='pdf') }}">
                     PDF (.pdf)
                   </a>

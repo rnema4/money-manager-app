@@ -1,4 +1,4 @@
-const CACHE_NAME = "money-manager-cache-v2";
+const CACHE_NAME = "money-manager-cache-v3";
 const APP_SHELL = [
   "/",
   "/login",
@@ -47,15 +47,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const responseCopy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseCopy));
-          return response;
-        })
-        .catch(async () => (await caches.match(event.request)) || caches.match("/static/offline.html"))
-    );
+    event.respondWith(fetch(event.request).catch(() => caches.match("/static/offline.html")));
     return;
   }
 
