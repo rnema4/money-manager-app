@@ -10,7 +10,7 @@ import secrets
 import hmac
 import struct
 import statistics
-from io import BytesIO
+from io import BytesIO, StringIO
 from functools import wraps
 from datetime import datetime, date, timedelta
 from decimal import Decimal
@@ -23,6 +23,32 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, inspect, text
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+def resolve_project_dir() -> str:
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def resolve_instance_dir() -> str:
+    explicit_instance_dir = os.getenv('MONEY_MANAGER_INSTANCE_DIR') or os.getenv('APP_INSTANCE_DIR')
+    if explicit_instance_dir:
+        instance_dir = os.path.abspath(os.path.expanduser(explicit_instance_dir))
+    else:
+        instance_dir = os.path.join(resolve_project_dir(), 'instance')
+    os.makedirs(instance_dir, exist_ok=True)
+    return instance_dir
+
+
+def resolve_flask_folder(env_var: str, default_subdir: str) -> str:
+    explicit_path = os.getenv(env_var, '').strip()
+    if explicit_path:
+        return os.path.abspath(os.path.expanduser(explicit_path))
+    return os.path.join(resolve_project_dir(), default_subdir)
+
 
 def normalize_database_url(raw_url: Optional[str]) -> Optional[str]:
     if not raw_url:
@@ -61,13 +87,16 @@ def build_database_url() -> str:
             auth_part = f'{mysql_user}:{quote_plus(mysql_password)}'
         return f'mysql+pymysql://{auth_part}@{mysql_host}:{mysql_port}/{mysql_db}'
 
-    instance_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
-    os.makedirs(instance_dir, exist_ok=True)
+    instance_dir = resolve_instance_dir()
     sqlite_path = os.path.join(instance_dir, 'money_manager.db').replace('\\', '/')
     return f'sqlite:///{sqlite_path}'
 
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=resolve_flask_folder('MONEY_MANAGER_TEMPLATE_DIR', 'templates'),
+    static_folder=resolve_flask_folder('MONEY_MANAGER_STATIC_DIR', 'static'),
+)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-change-me')
 app.config['SQLALCHEMY_DATABASE_URI'] = build_database_url()
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -2023,24 +2052,44 @@ def export_records():
     _, sort_order = resolve_records_sort(filters['sort'])
     transactions = query.order_by(sort_order, Transaction.id.desc()).all()
 
-    rows = build_records_export_rows(transactions)
+    export_format = str(request.args.get('format', 'xlsx') or 'xlsx').strip().lower()
+    if export_format not in {'xlsx', 'csv', 'pdf'}:
+        export_format = 'xlsx'
 
-    dataframe = pd.DataFrame(
-        rows,
-        columns=[
-            'Date', 'Description', 'Account', 'Category', 'Type', 'Amount',
-            'Notes', 'Payee', 'Label', 'Payment Type', 'Reference No', 'Source',
-        ],
-    )
+    rows = build_records_export_rows(transactions)
+    dataframe = pd.DataFrame(rows, columns=EXPORT_COLUMNS)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    if export_format == 'csv':
+        csv_output = StringIO()
+        dataframe.to_csv(csv_output, index=False)
+        csv_bytes = BytesIO(csv_output.getvalue().encode('utf-8-sig'))
+        csv_bytes.seek(0)
+        return send_file(
+            csv_bytes,
+            as_attachment=True,
+            download_name=f"records_export_{timestamp}.csv",
+            mimetype='text/csv',
+        )
+
+    if export_format == 'pdf':
+        pdf_bytes = build_records_export_pdf(rows)
+        pdf_output = BytesIO(pdf_bytes)
+        pdf_output.seek(0)
+        return send_file(
+            pdf_output,
+            as_attachment=True,
+            download_name=f"records_export_{timestamp}.pdf",
+            mimetype='application/pdf',
+        )
+
     output = BytesIO()
     dataframe.to_excel(output, index=False, engine='openpyxl')
     output.seek(0)
-
-    filename = f"records_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     return send_file(
         output,
         as_attachment=True,
-        download_name=filename,
+        download_name=f"records_export_{timestamp}.xlsx",
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
 
@@ -2067,13 +2116,7 @@ def bulk_export_records():
         return redirect(url_for('records'))
 
     rows = build_records_export_rows(transactions)
-    dataframe = pd.DataFrame(
-        rows,
-        columns=[
-            'Date', 'Description', 'Account', 'Category', 'Type', 'Amount',
-            'Notes', 'Payee', 'Label', 'Payment Type', 'Reference No', 'Source',
-        ],
-    )
+    dataframe = pd.DataFrame(rows, columns=EXPORT_COLUMNS)
     output = BytesIO()
     dataframe.to_excel(output, index=False, engine='openpyxl')
     output.seek(0)
@@ -3112,6 +3155,23 @@ def parse_selected_transaction_ids_from_request() -> list[int]:
     return unique_ids
 
 
+EXPORT_COLUMNS = [
+    'Date', 'Description', 'Account', 'Category', 'Type', 'Amount',
+    'Notes', 'Payee', 'Label', 'Payment Type', 'Reference No', 'Source',
+]
+
+
+def sanitize_export_text(value: object, max_length: Optional[int] = None) -> str:
+    text_value = str(value or '')
+    # Remove control characters that can break spreadsheet/xml writers.
+    cleaned = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f]', '', text_value)
+    if max_length and len(cleaned) > max_length:
+        if max_length <= 3:
+            return cleaned[:max_length]
+        return f"{cleaned[:max_length - 3]}..."
+    return cleaned
+
+
 def build_records_export_rows(transactions: list[Transaction]) -> list[dict]:
     tx_ids = [tx.id for tx in transactions]
     meta_map: dict[int, TransactionMeta] = {}
@@ -3125,21 +3185,79 @@ def build_records_export_rows(transactions: list[Transaction]) -> list[dict]:
         meta = meta_map.get(tx.id)
         rows.append(
             {
-                'Date': tx.tx_date.strftime('%Y-%m-%d %H:%M:%S'),
-                'Description': normalize_import_description(tx.description),
-                'Account': tx.account.name,
-                'Category': tx.category.name,
-                'Type': tx.tx_type.title(),
+                'Date': sanitize_export_text(tx.tx_date.strftime('%Y-%m-%d %H:%M:%S')),
+                'Description': sanitize_export_text(normalize_import_description(tx.description)),
+                'Account': sanitize_export_text(tx.account.name),
+                'Category': sanitize_export_text(tx.category.name),
+                'Type': sanitize_export_text(tx.tx_type.title()),
                 'Amount': float(signed_amount),
-                'Notes': tx.notes or '',
-                'Payee': tx.payee or '',
-                'Label': (meta.label if meta and meta.label else ''),
-                'Payment Type': (meta.payment_type if meta and meta.payment_type else ''),
-                'Reference No': tx.reference_no or '',
-                'Source': tx.source,
+                'Notes': sanitize_export_text(tx.notes or ''),
+                'Payee': sanitize_export_text(tx.payee or ''),
+                'Label': sanitize_export_text(meta.label if meta and meta.label else ''),
+                'Payment Type': sanitize_export_text(meta.payment_type if meta and meta.payment_type else ''),
+                'Reference No': sanitize_export_text(tx.reference_no or ''),
+                'Source': sanitize_export_text(tx.source),
             }
         )
     return rows
+
+
+def build_records_export_pdf(rows: list[dict]) -> bytes:
+    output = BytesIO()
+    document = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        leftMargin=16,
+        rightMargin=16,
+        topMargin=16,
+        bottomMargin=16,
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph('Money Manager - Records Export', styles['Heading3']),
+        Paragraph(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['BodyText']),
+        Spacer(1, 8),
+    ]
+
+    headers = ['Date', 'Description', 'Account', 'Category', 'Type', 'Amount']
+    table_rows = [headers]
+    for row in rows:
+        table_rows.append(
+            [
+                sanitize_export_text(row.get('Date', ''), 19),
+                sanitize_export_text(row.get('Description', ''), 42),
+                sanitize_export_text(row.get('Account', ''), 20),
+                sanitize_export_text(row.get('Category', ''), 20),
+                sanitize_export_text(row.get('Type', ''), 10),
+                f"{float(row.get('Amount', 0)):.2f}",
+            ]
+        )
+
+    if len(table_rows) == 1:
+        table_rows.append(['-', 'No records found', '-', '-', '-', '0.00'])
+
+    table = Table(
+        table_rows,
+        repeatRows=1,
+        colWidths=[95, 280, 110, 110, 75, 85],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f7a53')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d1d5db')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor('#f8fafc')]),
+                ('ALIGN', (-1, 1), (-1, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ]
+        )
+    )
+    story.append(table)
+    document.build(story)
+    return output.getvalue()
 
 
 def parse_decimal_or_none(value: object) -> Optional[Decimal]:

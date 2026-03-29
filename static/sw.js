@@ -1,4 +1,4 @@
-const CACHE_NAME = "money-manager-cache-v1";
+const CACHE_NAME = "money-manager-cache-v2";
 const APP_SHELL = [
   "/",
   "/login",
@@ -34,6 +34,15 @@ self.addEventListener("fetch", (event) => {
 
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) {
+    return;
+  }
+
+  // Let export/download endpoints go directly to network so attachment responses
+  // (xlsx/csv/pdf) are not treated like app page navigations.
+  if (
+    requestUrl.pathname.startsWith("/records/export") ||
+    requestUrl.pathname.startsWith("/records/bulk/export")
+  ) {
     return;
   }
 

@@ -110,12 +110,28 @@
             <div class="text-muted">Net total: {{ total|currency }}</div>
           </div>
           <div class="d-flex gap-2 flex-wrap">
-            <a
-              href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort) }}"
-              class="btn btn-outline-success"
-            >
-              Export Excel
-            </a>
+            <div class="btn-group">
+              <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                Export
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, format='xlsx') }}">
+                    Excel (.xlsx)
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, format='csv') }}">
+                    CSV (.csv)
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('export_records', search=filters.search, account_id=filters.account_id or '', category_id=filters.category_id or '', tx_type=filters.tx_type, currency=filters.currency, label=filters.label, transfers=filters.transfers, record_state=filters.record_state, min_amount=filters.min_amount, max_amount=filters.max_amount, sort=filters.sort, format='pdf') }}">
+                    PDF (.pdf)
+                  </a>
+                </li>
+              </ul>
+            </div>
             <a href="{{ url_for('add_transaction') }}" class="btn btn-success">+ Add Record</a>
           </div>
         </div>
